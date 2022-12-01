@@ -84,14 +84,11 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             ret.append(assdata)
         return ret
 
-    def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData):
+    def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]):
         """
         if version_data.pathid is None - it will be assigned automatically based on asset_path_id and version_id
         if version_id is None - next available version_id will be assigned automatically
 
-        :param asset_path_id:
-        :param version_data:
-        :return:
         """
         with sqlite3.connect(self.__db_path) as con:
             cur = con.cursor()
@@ -120,6 +117,10 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                          asset_path_id,
                          *version_data.version_id,
                          version_data.data_producer_task_attrs))
+
+            if dependencies:
+                cur.executemany('INSERT INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
+                                ((pathid, dep) for dep in dependencies))
 
             # update version_data fields
             version_data.path_id = pathid
@@ -201,6 +202,24 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             cur.execute('SELECT dependant FROM asset_version_dependencies WHERE depends_on == ?', (version_path_id,))
             return [x[0] for x in cur.fetchall()]
 
+    def add_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):
+        if not dependency_path_ids:
+            return
+        with sqlite3.connect(self.__db_path) as con:
+            cur = con.cursor()
+            cur.executemany('INSERT OR IGNORE INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
+                            ((version_path_id, dep) for dep in dependency_path_ids))
+            con.commit()
+
+    def remove_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):
+        if not dependency_path_ids:
+            return
+        with sqlite3.connect(self.__db_path) as con:
+            cur = con.cursor()
+            cur.executemany('DELETE FROM asset_version_dependencies WHERE dependant == ? AND depends_on == ?',
+                            ((version_path_id, dep) for dep in dependency_path_ids))
+            con.commit()
+
 
 _init_script = \
 '''
@@ -228,7 +247,8 @@ CREATE TABLE IF NOT EXISTS "asset_version_dependencies" (
     "dependant"    TEXT NOT NULL,
     "depends_on"   TEXT NOT NULL,
     FOREIGN KEY("dependant") REFERENCES "asset_versions"("pathid") ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY("depends_on") REFERENCES "asset_versions"("pathid") ON UPDATE CASCADE ON DELETE RESTRICT
+    FOREIGN KEY("depends_on") REFERENCES "asset_versions"("pathid") ON UPDATE CASCADE ON DELETE RESTRICT,
+    UNIQUE(dependant,depends_on)
 );
 COMMIT;
 PRAGMA journal_mode=wal;

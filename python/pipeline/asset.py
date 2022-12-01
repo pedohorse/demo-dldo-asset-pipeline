@@ -2,7 +2,7 @@ from .asset_data import AssetData, AssetVersionData, DataState
 from .data_access_interface import DataAccessInterface
 from .future import FutureResult, CompletedFuture
 
-from typing import Union, Tuple, List, Optional
+from typing import Union, Tuple, List, Optional, Iterable
 
 VersionType = Union[int, Tuple[int], Tuple[int, int], Tuple[int, int, int]]
 
@@ -18,7 +18,8 @@ def _normalize_version(version_id: VersionType) -> Tuple[int, int, int]:
         return version_id[:3]
     return *version_id, *((-1,)*(3-len(version_id)))
 
-def _denormalize_version(version_id: Tuple[int, int, int]) -> VersionType
+
+def _denormalize_version(version_id: Tuple[int, int, int]) -> VersionType:
     if version_id[1] == -1:
         return version_id[0]
     if version_id[2] == -1:
@@ -48,7 +49,7 @@ class Asset:
 
         return AssetVersion(self, version_id)
 
-    def create_new_version(self, version_id: Optional[VersionType] = None):
+    def create_new_version(self, version_id: Optional[VersionType] = None, dependencies: Iterable["AssetVersion"] = ()):
         version_id = _normalize_version(version_id)
         version_data = AssetVersionData(None,
                                         self.path_id,
@@ -57,7 +58,7 @@ class Asset:
                                         DataState.NOT_COMPUTED,
                                         None,
                                         None)
-        version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data)
+        version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
         return AssetVersion(self, version_data.version_id)
 
     def _get_data_provider(self) -> DataAccessInterface:
@@ -128,3 +129,6 @@ class AssetVersion:
     def get_dependants(self) -> List["AssetVersion"]:
         data = self._fresh_asset_version_data()
         return [self.from_path_id(self.data_provider, x) for x in self.data_provider.get_dependent_versions(data.path_id)]
+
+    def add_dependencies(self, dependencies: Iterable["AssetVersion"]):
+        self.data_provider.add_dependencies(self.path_id, (dep.path_id for dep in dependencies))

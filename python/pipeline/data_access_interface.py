@@ -36,7 +36,7 @@ class DataAccessInterface:
         raise NotImplementedError()
 
     # setters
-    def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData) -> AssetVersionData:
+    def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]) -> AssetVersionData:
         raise NotImplementedError()
 
     def create_new_asset(self, asset_data: AssetData) -> AssetData:
@@ -69,3 +69,18 @@ class DataAccessInterface:
         get path_ids for versions that depend on given
         """
         raise NotImplementedError()
+
+    def add_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):
+        """
+        add dependencies to given version_path_id
+        """
+        raise NotImplementedError()
+
+    def remove_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):
+        """
+        remove dependencies from a given version_path_id
+        if given dependency does not exist - this function should ignore it
+        """
+        raise NotImplementedError()
+
+
