@@ -14,7 +14,7 @@ from lifeblood_client.query import Task
 from lifeblood_client.submitting import NewTask, EnvironmentResolverArguments
 
 from pipeline.asset_data import AssetVersionData, AssetData, DataState
-from pipeline.data_access_interface import DataAccessInterface
+from pipeline.data_access_interface import DataAccessInterface, NotFoundError
 from pipeline.future import ConditionCheckerFuture, FutureResult
 
 from typing import Iterable, Tuple, List, Union
@@ -46,9 +46,18 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             db_path = Path(db_path)
         self.__db_path = db_path
         self.__lb_addr = lb_path
-        if not db_path.exists():
-            with sqlite3.connect(db_path) as con:
-                con.executescript(_init_script)
+        with sqlite3.connect(db_path) as con:
+            con.executescript(_init_script)
+
+    def get_asset_type_name(self, asset_path_id: str):
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute(f'SELECT type_name FROM assets WHERE pathid == ?', asset_path_id)
+            type_name = cur.fetchone()
+            if type_name is None:
+                raise NotFoundError(asset_path_id)
+        return type_name
 
     def get_asset_datas(self, asset_path_ids: Iterable[str]) -> List[AssetData]:
         with sqlite3.connect(self.__db_path) as con:
@@ -69,18 +78,21 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
         with sqlite3.connect(self.__db_path) as con:
             con.row_factory = sqlite3.Row
             cur = con.cursor()
-            cur.executemany('SELECT "pathid", "asset_pathid", version_*, data_task_attr, data_produced, data_calculator_id, data '
-                            'FROM asset_versions WHERE asset_pathid == ? AND version_0 == ? AND version_1 == ? AND version_2 == ?', ((pid, *v) for pid, v in asset_path_id_version_pairs))
-            datas = cur.fetchall()
+            datas = []
+            for pid, v in asset_path_id_version_pairs:
+                print(pid, v)
+                cur.execute('SELECT "pathid", "asset_pathid", version_0, version_1, version_2, data_task_attr, data_produced, data_calculator_id, data '
+                            'FROM asset_versions WHERE asset_pathid == ? AND version_0 == ? AND version_1 == ? AND version_2 == ?', (pid, *v))
+                datas.extend(cur.fetchall())
         ret = []
         for data in datas:
             assdata = AssetVersionData(path_id=data['pathid'],
                                        asset_path_id=data['asset_pathid'],
                                        version_id=(data['version_0'], data['version_1'], data['version_2']),
-                                       data_producer_task_attrs=json.loads(data['data_producer_task_attrs']),
+                                       data_producer_task_attrs=json.loads(data['data_task_attr']),
                                        data_availability=DataState(data['data_produced']),
                                        data_calculator_id=data['data_calculator_id'],
-                                       data=json.loads(data['data']))
+                                       data=json.loads(data['data']) if data['data'] is not None else None)
             ret.append(assdata)
         return ret
 
@@ -95,28 +107,28 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             cur.execute('SELECT pathid FROM assets WHERE pathid == ?', (asset_path_id,))
             if cur.fetchone() is None:
                 raise RuntimeError('bad asset_path_id')
-            version_string = '.'.join(str(x) for x in version_data.version_id)
             cur.execute('BEGIN IMMEDIATE')
 
             if version_data.version_id is None:
-                cur.execute('SELECT version_0, version_1, version_2 FROM asset_versions OREDER_BY version_0 DESC, version_1 DESC, version_2 DESC LIMIT 1')
-                ver = list(cur.fetchone()) or [0, -1, -1]
-                bump_idx = ver[max(0, ver.index(-1)-1) if -1 in ver else 2]
+                cur.execute('SELECT version_0, version_1, version_2 FROM asset_versions ORDER BY version_0 DESC, version_1 DESC, version_2 DESC LIMIT 1')
+                ver = list(cur.fetchone() or [0, -1, -1])
+                bump_idx = max(0, ver.index(-1)-1) if -1 in ver else 2
                 ver[bump_idx] += 1
                 version_data.version_id = tuple(ver)
             else:  # otherwise ensure version_id is legal
-                cur.execute('SELECT pathid FROM asset_versions WHERE version_0 == ?, version_1 == ?, version_2 == ?', version_data.version_id)
+                cur.execute('SELECT pathid FROM asset_versions WHERE version_0 == ? AND version_1 == ? AND version_2 == ?', version_data.version_id)
                 if cur.fetchone() is not None:
                     con.rollback()
                     raise RuntimeError(f'version_id "{version_data.version_id}" is already published')
 
+            version_string = '.'.join(str(x) for x in version_data.version_id)
             pathid = version_data.path_id or f'{asset_path_id}/{version_string}'
             cur.execute('INSERT INTO asset_versions ("pathid", "asset_pathid", version_0, version_1, version_2, "data_task_attr") '
-                        'VALUES (?, ?, ?, ?)',
+                        'VALUES (?, ?, ?,?,?, ?)',
                         (pathid,
                          asset_path_id,
                          *version_data.version_id,
-                         version_data.data_producer_task_attrs))
+                         json.dumps(version_data.data_producer_task_attrs)))
 
             if dependencies:
                 cur.executemany('INSERT INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
@@ -165,11 +177,11 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             if in_lifeblood_runtime:
                 lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], blocking=True)
             else:
-                task = NewTask(name=task_stuff['name'],
-                               node_id=task_stuff['node_id'],
+                task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
+                               node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
                                scheduler_addr=self.__lb_addr,
-                               env_args=EnvironmentResolverArguments(task_stuff['env']['name'], task_stuff['env']['attribs']),
-                               task_attributes=task_stuff['attribs'],
+                               env_args=EnvironmentResolverArguments(task_stuff.get('env', {}).get('name', 'StandardEnvironmentResolver'), task_stuff.get('env', {}).get('attribs', {})),
+                               task_attributes=task_stuff.get('attribs', {}),
                                priority=task_stuff.get('priority', 50)).submit()
 
             cur.execute('UPDATE asset_versions SET data_produced = ?, data_calculator_id = ? WHERE pathid == ?', (DataState.IS_COMPUTING.value,
@@ -181,6 +193,12 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
     def _data_computation_completed_callback(self, path_id: str, data: dict):
         with sqlite3.connect(self.__db_path) as con:
             cur = con.cursor()
+            cur.execute('BEGIN IMMEDIATE')
+            cur.execute('SELECT data_produced FROM asset_versions WHERE pathid == ?', (path_id,))
+            check_data = cur.fetchone()
+            if check_data is None or check_data[0] != DataState.IS_COMPUTING.value:
+                con.rollback()
+                raise RuntimeError('data computation was not started, inconsistency!')
             cur.execute('UPDATE asset_versions SET data_produced = ?, data_calculator_id = ?, data = ? '
                         'WHERE pathid == ?', (DataState.AVAILABLE.value,
                                               -1,
@@ -230,7 +248,7 @@ CREATE TABLE IF NOT EXISTS "asset_versions" (
     "version_0"    INTEGER NOT NULL DEFAULT 0,
     "version_1"    INTEGER NOT NULL DEFAULT -1,
     "version_2"    INTEGER NOT NULL DEFAULT -1,
-    "data_task_attr    TEXT,
+    "data_task_attr"    TEXT,
     "data_produced"    INTEGER NOT NULL DEFAULT 0,
     "data_calculator_id"    INTEGER DEFAULT NULL,
     "data"    TEXT,
@@ -241,6 +259,7 @@ CREATE TABLE IF NOT EXISTS "assets" (
     "pathid"    TEXT NOT NULL UNIQUE,
     "name"    TEXT,
     "description"   TEXT,
+    type_name       TEXT,
     PRIMARY KEY("pathid")
 );
 CREATE TABLE IF NOT EXISTS "asset_version_dependencies" (

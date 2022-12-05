@@ -16,7 +16,7 @@ def _normalize_version(version_id: VersionType) -> Tuple[int, int, int]:
         return version_id, -1, -1
     if len(version_id) >= 3:
         return version_id[:3]
-    return *version_id, *((-1,)*(3-len(version_id)))
+    return (*version_id, *((-1,)*(3-len(version_id))))
 
 
 def _denormalize_version(version_id: Tuple[int, int, int]) -> VersionType:
@@ -47,22 +47,31 @@ class Asset:
     def get_version(self, version_id: VersionType) -> "AssetVersion":
         version_id = _normalize_version(version_id)
 
-        return AssetVersion(self, version_id)
+        return self._get_version_class()(self, version_id)
 
-    def create_new_version(self, version_id: Optional[VersionType] = None, dependencies: Iterable["AssetVersion"] = ()):
-        version_id = _normalize_version(version_id)
+    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: dict = None, dependencies: Iterable["AssetVersion"] = ()):
+        if version_id is not None:
+            version_id = _normalize_version(version_id)
         version_data = AssetVersionData(None,
                                         self.path_id,
                                         version_id,
-                                        {},
+                                        creation_task_parameters or {},
                                         DataState.NOT_COMPUTED,
                                         None,
                                         None)
         version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
-        return AssetVersion(self, version_data.version_id)
+        return self._get_version_class()(self, version_data.version_id)
 
     def _get_data_provider(self) -> DataAccessInterface:
         return self.__data_provider
+
+    @classmethod
+    def _get_version_class(cls):
+        return AssetVersion
+
+    @classmethod
+    def type_name(cls):
+        return cls.__name__
 
 
 class AssetVersion:

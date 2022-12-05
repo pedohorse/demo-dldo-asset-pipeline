@@ -14,6 +14,9 @@ class DataAccessInterface:
             raise NotFoundError()
         return asset_datas[0]
 
+    def get_asset_type_name(self, asset_path_id: str):
+        raise NotImplementedError()
+
     def get_asset_version_data(self, asset_path_id: str, version_id: Tuple[int, int, int]) -> AssetVersionData:
         asset_ver_datas = self.get_asset_version_datas(((asset_path_id, version_id),))
         if len(asset_ver_datas) == 0:

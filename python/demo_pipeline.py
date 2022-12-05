@@ -1,4 +1,5 @@
 from pipeline.director import Director
+from pipeline.data_access_interface import NotFoundError
 from pipeline_impl.sqlite_data_manager import SqliteDataManagerWithLifeblood
 from pipeline_impl.uri_multihandler import UriMultiHandler
 from pipeline_impl.asset_uri_handler import AssetUriHandler
