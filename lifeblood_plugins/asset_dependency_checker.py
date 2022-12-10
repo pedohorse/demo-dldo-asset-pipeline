@@ -32,7 +32,7 @@ class AssetDependencyChecker(BaseNode):
             ui.add_parameter('with no data only', 'create tasks for versions with data not computed', NodeParameterType.BOOL, True)
             ui.add_separator()
             data_task_param = ui.add_parameter('create data task', 'create data task', NodeParameterType.BOOL, False)
-            ui.add_parameter('inherit attribs', 'inherit attributes', NodeParameterType.BOOL, True).append_visibility_condition(data_task_param, 'eq', False)
+            ui.add_parameter('inherit attribs', 'inherit attributes', NodeParameterType.BOOL, True).append_visibility_condition(data_task_param, '==', False)
 
     def process_task(self, context: ProcessingContext) -> ProcessingResult:
         asset_version_pid = context.param_value('asset_path_id to get deps for')
@@ -59,7 +59,7 @@ class AssetDependencyChecker(BaseNode):
                 attribs = dict(base_attribs)
                 attribs['asset_version_id'] = dep.path_id
                 attribs['asset_version_version'] = dep.version_id
-                spawns.append(TaskSpawn(f'asset {dep.asset.name}, version: {".".join(dep.version_id)}',
+                spawns.append(TaskSpawn(f'asset {dep.asset.name}, version: {str(dep.version_id)}',
                                         task_attributes=attribs))
 
             return ProcessingResult(spawn=spawns)
