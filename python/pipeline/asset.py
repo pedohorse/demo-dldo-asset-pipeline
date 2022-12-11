@@ -26,6 +26,10 @@ class Asset:
     def description(self):
         return self.__asset_data.description
 
+    def get_latest_version(self) -> "AssetVersion":
+        version_data = self._get_data_provider().get_asset_version_data(self.path_id, None)
+        return self.get_version(version_data.version_id)
+
     def get_version(self, version_id: VersionType) -> "AssetVersion":
         version_id = normalize_version(version_id)
 
