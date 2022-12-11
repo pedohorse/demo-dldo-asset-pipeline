@@ -17,7 +17,7 @@ from pipeline.asset_data import AssetVersionData, AssetData, DataState
 from pipeline.data_access_interface import DataAccessInterface, NotFoundError
 from pipeline.future import ConditionCheckerFuture, FutureResult
 
-from typing import Iterable, Tuple, List, Union
+from typing import Iterable, Tuple, List, Union, Optional
 
 
 class LifebloodTaskFuture(ConditionCheckerFuture):
@@ -74,15 +74,20 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             ret.append(assdata)
         return ret
 
-    def get_asset_version_datas(self, asset_path_id_version_pairs: Iterable[Tuple[str, Tuple[int, int, int]]]) -> List[AssetVersionData]:
+    def get_asset_version_datas(self, asset_path_id_version_pairs: Iterable[Tuple[str, Optional[Tuple[int, int, int]]]]) -> List[AssetVersionData]:
         with sqlite3.connect(self.__db_path) as con:
             con.row_factory = sqlite3.Row
             cur = con.cursor()
             datas = []
             for pid, v in asset_path_id_version_pairs:
-                print(pid, v)
-                cur.execute('SELECT "pathid", "asset_pathid", version_0, version_1, version_2, data_task_attr, data_produced, data_calculator_id, data '
-                            'FROM asset_versions WHERE asset_pathid == ? AND version_0 == ? AND version_1 == ? AND version_2 == ?', (pid, *v))
+                # print(pid, v)
+                if v is None:  # fetch latest
+                    cur.execute('SELECT "pathid", "asset_pathid", version_0, version_1, version_2, data_task_attr, data_produced, data_calculator_id, data '
+                                'FROM asset_versions WHERE asset_pathid == ? '
+                                'ORDER BY version_0 DESC, version_1 DESC, version_2 DESC LIMIT 1', (pid,))
+                else:
+                    cur.execute('SELECT "pathid", "asset_pathid", version_0, version_1, version_2, data_task_attr, data_produced, data_calculator_id, data '
+                                'FROM asset_versions WHERE asset_pathid == ? AND version_0 == ? AND version_1 == ? AND version_2 == ?', (pid, *v))
                 datas.extend(cur.fetchall())
         ret = []
         for data in datas:
@@ -132,7 +137,8 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             cur.execute('BEGIN IMMEDIATE')
 
             if version_data.version_id is None:
-                cur.execute('SELECT version_0, version_1, version_2 FROM asset_versions ORDER BY version_0 DESC, version_1 DESC, version_2 DESC LIMIT 1')
+                cur.execute('SELECT version_0, version_1, version_2 FROM asset_versions WHERE asset_pathid == ? '
+                            'ORDER BY version_0 DESC, version_1 DESC, version_2 DESC LIMIT 1', (asset_path_id,))
                 ver = list(cur.fetchone() or [0, -1, -1])
                 bump_idx = max(0, ver.index(-1)-1) if -1 in ver else 2
                 ver[bump_idx] += 1
