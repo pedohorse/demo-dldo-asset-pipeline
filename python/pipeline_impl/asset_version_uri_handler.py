@@ -1,7 +1,7 @@
 from pipeline.uri_handler import UriHandlerBase
 from pipeline.uri import Uri
 from pipeline.asset import Asset, AssetVersion
-from pipeline.director import Director
+from pipeline.director import Director, NotFoundError
 
 from typing import Union
 
@@ -15,7 +15,12 @@ class AssetVersionUriHandler(UriHandlerBase):
         return uri.protocol == 'assetver'
 
     def fetch(self, uri: Uri) -> Union[AssetVersion, str]:
-        assver = self.__director.get_asset_version(uri.path)
+        try:
+            assver = self.__director.get_asset_version(uri.path)
+        except NotFoundError:
+            # maybe uri path is an asset path, then we bring the latest version
+            ass = self.__director.get_asset(uri.path)
+            assver = ass.get_latest_version()
         if uri.query:
             if not hasattr(assver, uri.query):
                 return ''
