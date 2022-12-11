@@ -1,30 +1,12 @@
 from .asset_data import AssetData, AssetVersionData, DataState
 from .data_access_interface import DataAccessInterface
 from .future import FutureResult, CompletedFuture
+from .utils import normalize_version, denormalize_version, VersionType
 
 from typing import Union, Tuple, List, Optional, Iterable
 
-VersionType = Union[int, Tuple[int], Tuple[int, int], Tuple[int, int, int]]
-
-
 class DataNotYetAvailable(Exception):
     pass
-
-
-def _normalize_version(version_id: VersionType) -> Tuple[int, int, int]:
-    if isinstance(version_id, int):
-        return version_id, -1, -1
-    if len(version_id) >= 3:
-        return version_id[:3]
-    return (*version_id, *((-1,)*(3-len(version_id))))
-
-
-def _denormalize_version(version_id: Tuple[int, int, int]) -> VersionType:
-    if version_id[1] == -1:
-        return version_id[0]
-    if version_id[2] == -1:
-        return version_id[:2]
-    return version_id
 
 
 class Asset:
@@ -45,13 +27,13 @@ class Asset:
         return self.__asset_data.description
 
     def get_version(self, version_id: VersionType) -> "AssetVersion":
-        version_id = _normalize_version(version_id)
+        version_id = normalize_version(version_id)
 
         return self._get_version_class()(self, version_id)
 
     def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: dict = None, dependencies: Iterable["AssetVersion"] = ()):
         if version_id is not None:
-            version_id = _normalize_version(version_id)
+            version_id = normalize_version(version_id)
         version_data = AssetVersionData(None,
                                         self.path_id,
                                         version_id,
@@ -77,17 +59,17 @@ class Asset:
 class AssetVersion:
     def __init__(self, asset: Asset, version_id: VersionType):
         self.__asset = asset
-        self.__version_id = _normalize_version(version_id)
+        self.__version_id = normalize_version(version_id)
         self._fresh_asset_version_data()  # this will raise if asset+version_id are invalid
 
     @classmethod
     def from_path_id(cls, data_provider: DataAccessInterface, version_path_id: str) -> "AssetVersion":
         data = data_provider.get_asset_version_data_from_path_id(version_path_id)
-        return AssetVersion(Asset(data.asset_path_id, data_provider), data.version_id)
+        return cls(Asset(data.asset_path_id, data_provider), data.version_id)
 
     @property
     def version_id(self) -> VersionType:
-        return _denormalize_version(self.__version_id)
+        return denormalize_version(self.__version_id)
 
     @property
     def asset(self) -> Asset:
@@ -102,7 +84,7 @@ class AssetVersion:
 
     def schedule_data_calculation_if_needed(self) -> FutureResult:
         data = self._fresh_asset_version_data()
-        if data.data_availability != DataState.AVAILABLE:
+        if data.data_availability == DataState.AVAILABLE:
             return CompletedFuture(True)
         return self.data_provider.schedule_data_computation_for_asset_version(data.path_id)
 

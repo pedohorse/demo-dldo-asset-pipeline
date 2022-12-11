@@ -19,7 +19,7 @@ class CacheAsset(Asset):
         :param dependencies:
         :return:
         """
-        base_env_requirements = {'user': getuser}  # theoretically all packages should be retrieved here from env, but we have a simplified example
+        base_env_requirements = {'user': getuser()}  # theoretically all packages should be retrieved here from env, but we have a simplified example
         if extra_env_requirements:
             base_env_requirements.update(extra_env_requirements)
 
@@ -29,7 +29,9 @@ class CacheAsset(Asset):
                          'data_compute_type': 'cache',
                          'hipfile': source[0],
                          'hipdriver': source[1],
-                         'frames': list(range(frame_range[0], frame_range[1]+1))
+                         'frames': list(range(frame_range[0], frame_range[1]+1)),
+                         'requirements': {'cpu': {'min': 2, 'pref': 32},
+                                          'cmem': {'min': 4, 'pref': 16}}
                          },
              'env': {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
                      'attribs': base_env_requirements
@@ -46,9 +48,11 @@ class CacheAsset(Asset):
 
 
 class CacheAssetVersion(AssetVersion):
+    @property
     def cache_path(self):
         return self.get_data()['cache_path_template']
 
+    @property
     def frame_range(self):
         return self.get_data()['frame_range']
 
@@ -58,7 +62,7 @@ class RenderAsset(Asset):
     this asset represents something rendered, image sequence
     """
     def create_new_version(self, source: Tuple[str, str], frame_range: Tuple[int, int], version_id: Optional[VersionType] = None, *, extra_env_requirements: Optional[Dict[str, str]] = None, dependencies: Iterable["AssetVersion"] = ()):
-        base_env_requirements = {'user': getuser}  # theoretically all packages should be retrieved here from env, but we have a simplified example
+        base_env_requirements = {'user': getuser()}  # theoretically all packages should be retrieved here from env, but we have a simplified example
         if extra_env_requirements:
             base_env_requirements.update(extra_env_requirements)
 
@@ -68,7 +72,9 @@ class RenderAsset(Asset):
                          'data_compute_type': 'cache',
                          'hipfile': source[0],
                          'hipdriver': source[1],
-                         'frames': list(range(frame_range[0], frame_range[1] + 1))
+                         'frames': list(range(frame_range[0], frame_range[1] + 1)),
+                         'requirements': {'cpu': {'min': 2, 'pref':32},
+                                          'cmem': {'min': 4, 'pref': 16}}
                          },
              'env': {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
                      'attribs': base_env_requirements

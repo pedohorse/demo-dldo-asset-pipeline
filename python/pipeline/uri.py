@@ -1,9 +1,12 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 
 class Uri:
     def __init__(self, uri_string: str):
         self.__protocol, path = uri_string.split(':', 1)
+        self.__query = None
+        if '?' in path:
+            path, self.__query = path.split('?', 1)
         self.__path_elements = path.split('/')
 
         # cached
@@ -22,6 +25,10 @@ class Uri:
     @property
     def protocol(self) -> str:
         return self.__protocol
+
+    @property
+    def query(self) -> Optional[str]:
+        return self.__query
 
     def __str__(self):
         return f'{self.__protocol}:{"/".join(self.__path_elements)}'

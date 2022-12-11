@@ -42,7 +42,7 @@ class DataAccessInterface:
     def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]) -> AssetVersionData:
         raise NotImplementedError()
 
-    def create_new_asset(self, asset_data: AssetData) -> AssetData:
+    def create_new_asset(self, asset_type: str, asset_data: AssetData) -> AssetData:
         raise NotImplementedError()
 
     # scheduling execution

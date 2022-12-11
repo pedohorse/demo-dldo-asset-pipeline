@@ -53,11 +53,11 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
         with sqlite3.connect(self.__db_path) as con:
             con.row_factory = sqlite3.Row
             cur = con.cursor()
-            cur.execute(f'SELECT type_name FROM assets WHERE pathid == ?', asset_path_id)
+            cur.execute(f'SELECT type_name FROM assets WHERE pathid == ?', (asset_path_id,))
             type_name = cur.fetchone()
             if type_name is None:
                 raise NotFoundError(asset_path_id)
-        return type_name
+        return type_name['type_name']
 
     def get_asset_datas(self, asset_path_ids: Iterable[str]) -> List[AssetData]:
         with sqlite3.connect(self.__db_path) as con:
@@ -96,6 +96,28 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             ret.append(assdata)
         return ret
 
+    def get_asset_version_datas_from_path_id(self, asset_version_path_ids: Iterable[str]) -> List[AssetVersionData]:
+        # TODO: this func and above are almost identical up to WHERE condition, so yeah...
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            datas = []
+            for path_id in asset_version_path_ids:
+                cur.execute('SELECT "pathid", "asset_pathid", version_0, version_1, version_2, data_task_attr, data_produced, data_calculator_id, data '
+                            'FROM asset_versions WHERE pathid == ?', (path_id,))
+                datas.extend(cur.fetchall())
+        ret = []
+        for data in datas:
+            assdata = AssetVersionData(path_id=data['pathid'],
+                                       asset_path_id=data['asset_pathid'],
+                                       version_id=(data['version_0'], data['version_1'], data['version_2']),
+                                       data_producer_task_attrs=json.loads(data['data_task_attr']),
+                                       data_availability=DataState(data['data_produced']),
+                                       data_calculator_id=data['data_calculator_id'],
+                                       data=json.loads(data['data']) if data['data'] is not None else None)
+            ret.append(assdata)
+        return ret
+
     def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]):
         """
         if version_data.pathid is None - it will be assigned automatically based on asset_path_id and version_id
@@ -121,7 +143,7 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                     con.rollback()
                     raise RuntimeError(f'version_id "{version_data.version_id}" is already published')
 
-            version_string = '.'.join(str(x) for x in version_data.version_id)
+            version_string = '.'.join(str(x) for x in version_data.version_id if x != -1)
             pathid = version_data.path_id or f'{asset_path_id}/{version_string}'
             cur.execute('INSERT INTO asset_versions ("pathid", "asset_pathid", version_0, version_1, version_2, "data_task_attr") '
                         'VALUES (?, ?, ?,?,?, ?)',
@@ -143,14 +165,15 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             con.commit()
         return version_data
 
-    def create_new_asset(self, asset_data: AssetData) -> AssetData:
+    def create_new_asset(self, asset_type: str, asset_data: AssetData) -> AssetData:
         pathid = asset_data.path_id or re.sub(r'\W', '_', asset_data.name)
         with sqlite3.connect(self.__db_path) as con:
             cur = con.cursor()
-            cur.execute('INSERT INTO assets ("pathid", "name", "description") VALUES (?, ?, ?)',
+            cur.execute('INSERT INTO assets ("pathid", "name", "description", "type_name") VALUES (?, ?, ?, ?)',
                         (pathid,
-                        asset_data.name,
-                        asset_data.description))
+                         asset_data.name,
+                         asset_data.description,
+                         asset_type))
             asset_data.path_id = pathid
             con.commit()
         return asset_data
@@ -160,12 +183,14 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             con.row_factory = sqlite3.Row
             con.execute('BEGIN IMMEDIATE')  # we start transaction here already to ensure consistency
             cur = con.cursor()
-            cur.execute('SELECT data_produced, data_task_attr, data_calculator_id FROM asset_versions WHERE pathid == ?', (path_id,))
+            cur.execute('SELECT asset_pathid, data_produced, data_task_attr, data_calculator_id, version_0, version_1, version_2 '
+                        'FROM asset_versions WHERE pathid == ?', (path_id,))
             data = cur.fetchone()
             if data is None:
                 con.rollback()
                 raise ValueError('path id "{}" does not exist'.format(path_id))
             state = DataState(data['data_produced'])
+            version_string = '.'.join(str(x) for x in (data[f'version_{i}'] for i in (0, 1, 2)) if x != -1)
 
             if state == DataState.IS_COMPUTING:
                 fut = LifebloodTaskFuture(self.__lb_addr, data['data_calculator_id'])
@@ -174,8 +199,11 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
 
             # schedule data coputation
             task_stuff = json.loads(data['data_task_attr'])
+            task_stuff.setdefault('attribs', {})['asset_version_id'] = path_id
+            task_stuff.setdefault('attribs', {})['asset_id'] = data['asset_pathid']
+            task_stuff.setdefault('attribs', {})['version'] = version_string
             if in_lifeblood_runtime:
-                lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], blocking=True)
+                task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], blocking=True)
             else:
                 task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
                                node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
@@ -183,12 +211,13 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                                env_args=EnvironmentResolverArguments(task_stuff.get('env', {}).get('name', 'StandardEnvironmentResolver'), task_stuff.get('env', {}).get('attribs', {})),
                                task_attributes=task_stuff.get('attribs', {}),
                                priority=task_stuff.get('priority', 50)).submit()
+                task_id = task.id
 
             cur.execute('UPDATE asset_versions SET data_produced = ?, data_calculator_id = ? WHERE pathid == ?', (DataState.IS_COMPUTING.value,
-                                                                                                                  task.id,
+                                                                                                                  task_id,
                                                                                                                   path_id))
             con.commit()
-            return LifebloodTaskFuture(self.__lb_addr, task.id)
+            return LifebloodTaskFuture(self.__lb_addr, task_id)
 
     def _data_computation_completed_callback(self, path_id: str, data: dict):
         with sqlite3.connect(self.__db_path) as con:
