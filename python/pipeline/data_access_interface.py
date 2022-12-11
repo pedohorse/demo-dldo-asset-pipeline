@@ -1,4 +1,4 @@
-from typing import Iterable, Tuple, List
+from typing import Iterable, Tuple, List, Optional
 from .asset_data import AssetData, AssetVersionData
 from .future import FutureResult
 
@@ -17,7 +17,14 @@ class DataAccessInterface:
     def get_asset_type_name(self, asset_path_id: str):
         raise NotImplementedError()
 
-    def get_asset_version_data(self, asset_path_id: str, version_id: Tuple[int, int, int]) -> AssetVersionData:
+    def get_asset_version_data(self, asset_path_id: str, version_id: Optional[Tuple[int, int, int]]) -> AssetVersionData:
+        """
+        if version_id is None - fetch the latest
+
+        :param asset_path_id:
+        :param version_id:
+        :return:
+        """
         asset_ver_datas = self.get_asset_version_datas(((asset_path_id, version_id),))
         if len(asset_ver_datas) == 0:
             raise NotFoundError()
@@ -32,7 +39,7 @@ class DataAccessInterface:
     def get_asset_datas(self, asset_path_ids: Iterable[str]) -> List[AssetData]:
         raise NotImplementedError()
 
-    def get_asset_version_datas(self, asset_path_id_version_pairs: Iterable[Tuple[str, Tuple[int, int, int]]]) -> List[AssetVersionData]:
+    def get_asset_version_datas(self, asset_path_id_version_pairs: Iterable[Tuple[str, Optional[Tuple[int, int, int]]]]) -> List[AssetVersionData]:
         raise NotImplementedError()
 
     def get_asset_version_datas_from_path_id(self, asset_version_path_id: Iterable[str]) -> List[AssetVersionData]:
