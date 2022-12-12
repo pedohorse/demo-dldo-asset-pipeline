@@ -21,3 +21,6 @@ class AssetUriHandler(UriHandlerBase):
                 return ''
             return getattr(ass, uri.query)
         return ass
+
+    def is_dynamic(self, uri: Uri) -> bool:
+        return False
