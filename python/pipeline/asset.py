@@ -35,7 +35,7 @@ class Asset:
 
         return self._get_version_class()(self, version_id)
 
-    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: dict = None, dependencies: Iterable["AssetVersion"] = ()):
+    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: dict = None, dependencies: Iterable["AssetVersion"] = ()) -> "AssetVersion":
         if version_id is not None:
             version_id = normalize_version(version_id)
         version_data = AssetVersionData(None,
