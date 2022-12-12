@@ -21,3 +21,13 @@ class UriHandlerBase:
         :return:
         """
         raise NotImplementedError()
+
+    def is_dynamic(self, uri: Uri) -> bool:
+        """
+        Some URI may resolve to different things depending on something.
+        It's important to distinguish such URIs in case you would want to lock them for reproducibility
+
+        :param uri:
+        :return:
+        """
+        raise NotImplementedError()
