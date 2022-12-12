@@ -50,10 +50,18 @@ class Director:
     def get_uri_handlers(self) -> Tuple[UriHandlerBase]:
         return tuple(self.__uri_handler)
 
+    def _get_accepting_uri_handler(self, uri: Uri):
+        for handler in self.__uri_handler:
+            if handler.accepts(uri):
+                return handler
+        raise UriNotSupportedError(uri)
+
+    def is_uri_dynamic(self, uri: Union[Uri, str]):
+        if isinstance(uri, str):
+            uri = Uri(uri)
+        return self._get_accepting_uri_handler(uri).is_dynamic(uri)
+
     def fetch_uri(self, uri: Union[Uri, str]):
         if isinstance(uri, str):
             uri = Uri(uri)
-        for handler in self.__uri_handler:
-            if handler.accepts(uri):
-                return handler.fetch(uri)
-        raise UriNotSupportedError(uri)
+        return self._get_accepting_uri_handler(uri).fetch(uri)
