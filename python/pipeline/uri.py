@@ -31,7 +31,7 @@ class Uri:
         return self.__query
 
     def __str__(self):
-        return f'{self.__protocol}:{"/".join(self.__path_elements)}'
+        return f'{self.__protocol}:{"/".join(self.__path_elements)}' + (f'?{self.__query}' if self.__query is not None else '')
 
     def __repr__(self):
         return f'<Uri: "{str(self)}">'
