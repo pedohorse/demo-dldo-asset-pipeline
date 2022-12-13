@@ -11,7 +11,7 @@ class CacheAsset(Asset):
     def create_new_version(self, source: Tuple[str, str], frame_range: Tuple[int, int], is_sim: bool = False, version_id: Optional[VersionType] = None,
                            *, extra_env_requirements: Optional[Dict[str, str]] = None,
                            lock_asset_versions: Dict[str, str] = None,
-                           dependencies: Iterable["AssetVersion"] = ()):
+                           dependencies: Iterable["AssetVersion"] = ()) -> AssetVersion:
         """
 
         :param source: hip file path, and rop node path that generate final cache
@@ -48,7 +48,7 @@ class CacheAsset(Asset):
         if is_sim:
             creation_task_parameters['attribs']['framechunk_size'] = frame_range[1] - frame_range[0] + 1
 
-        self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
+        return self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
 
     @classmethod
     def _get_version_class(cls):
@@ -72,7 +72,7 @@ class RenderAsset(Asset):
     def create_new_version(self, source: Tuple[str, str], frame_range: Tuple[int, int], version_id: Optional[VersionType] = None,
                            *, extra_env_requirements: Optional[Dict[str, str]] = None,
                            lock_asset_versions: Dict[str, str],
-                           dependencies: Iterable["AssetVersion"] = ()):
+                           dependencies: Iterable["AssetVersion"] = ()) -> AssetVersion:
 
         base_env_requirements = {'user': getuser()}  # theoretically all packages should be retrieved here from env, but we have a simplified example
         if extra_env_requirements:
@@ -97,7 +97,7 @@ class RenderAsset(Asset):
                      }
              }
 
-        self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
+        return self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
 
     @classmethod
     def _get_version_class(cls):
