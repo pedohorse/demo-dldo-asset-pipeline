@@ -1,9 +1,13 @@
+import json
+import os
 from .asset_data import AssetData, AssetVersionData, DataState
 from .data_access_interface import DataAccessInterface
 from .future import FutureResult, CompletedFuture
 from .utils import normalize_version, denormalize_version, VersionType
+from .generation_task_parameters import GenerationTaskParameters
 
 from typing import Union, Tuple, List, Optional, Iterable
+
 
 class DataNotYetAvailable(Exception):
     pass
@@ -30,18 +34,28 @@ class Asset:
         version_data = self._get_data_provider().get_asset_version_data(self.path_id, None)
         return self.get_version(version_data.version_id)
 
+    def get_default_version(self) -> "AssetVersion":
+        # default version for an asset may be locked in the environment
+        mapping = json.loads(os.environ.get('LBATTR_locked_asset_versions', '{}'))
+
+        asset_ver_pathid = mapping.get(self.path_id)
+        if asset_ver_pathid:
+            # TODO: sanity check that mapped version belongs to this asset
+            return self._get_version_class().from_path_id(self._get_data_provider(), asset_ver_pathid)
+        return self.get_latest_version()
+
     def get_version(self, version_id: VersionType) -> "AssetVersion":
         version_id = normalize_version(version_id)
 
         return self._get_version_class()(self, version_id)
 
-    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: dict = None, dependencies: Iterable["AssetVersion"] = ()) -> "AssetVersion":
+    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: Optional[GenerationTaskParameters] = None, dependencies: Iterable["AssetVersion"] = ()) -> "AssetVersion":
         if version_id is not None:
             version_id = normalize_version(version_id)
         version_data = AssetVersionData(None,
                                         self.path_id,
                                         version_id,
-                                        creation_task_parameters or {},
+                                        creation_task_parameters or GenerationTaskParameters({}, {}, {}),
                                         DataState.NOT_COMPUTED,
                                         None,
                                         None)

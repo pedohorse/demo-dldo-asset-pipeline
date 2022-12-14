@@ -1,6 +1,7 @@
 import json
 from enum import Enum
 from dataclasses import dataclass
+from .generation_task_parameters import GenerationTaskParameters
 
 from typing import List, Optional, Tuple
 
@@ -23,7 +24,7 @@ class AssetVersionData:
     path_id: str
     asset_path_id: str
     version_id: Tuple[int, int, int]
-    data_producer_task_attrs: dict
+    data_producer_task_attrs: GenerationTaskParameters
     data_availability: DataState
     data_calculator_id: int
     data: Optional[dict]

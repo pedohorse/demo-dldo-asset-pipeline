@@ -1,5 +1,6 @@
 from getpass import getuser
 from pipeline.asset import Asset, AssetVersion, VersionType
+from pipeline.generation_task_parameters import GenerationTaskParameters
 
 from typing import Optional, Tuple, Iterable, Dict
 
@@ -30,7 +31,7 @@ class CacheAsset(Asset):
         if lock_asset_versions is None:
             lock_asset_versions = {}
 
-        creation_task_parameters = \
+        creation_task_attributes = \
             {'name': f'{self.path_id}, ver {version_id}: data creation',
              'attribs': {'eat': 'shit',
                          'data_compute_type': 'cache',
@@ -39,16 +40,18 @@ class CacheAsset(Asset):
                          'frames': list(range(frame_range[0], frame_range[1]+1)),
                          'requirements': {'cpu': {'min': 2, 'pref': 32},
                                           'cmem': {'min': 4, 'pref': 16}},
-                         'locked_asset_versions': lock_asset_versions
                          },
-             'env': {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
-                     'attribs': base_env_requirements
-                     }
              }
         if is_sim:
-            creation_task_parameters['attribs']['framechunk_size'] = frame_range[1] - frame_range[0] + 1
+            creation_task_attributes['attribs']['framechunk_size'] = frame_range[1] - frame_range[0] + 1
 
-        return self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
+        generation_task_parameters = GenerationTaskParameters(lock_asset_versions,
+                                                              creation_task_attributes,
+                                                              {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
+                                                               'attribs': base_env_requirements}
+                                                              )
+
+        return self.create_new_generic_version(version_id, generation_task_parameters, dependencies)
 
     @classmethod
     def _get_version_class(cls):
@@ -81,7 +84,7 @@ class RenderAsset(Asset):
         if lock_asset_versions is None:
             lock_asset_versions = {}
 
-        creation_task_parameters = \
+        creation_task_attributes = \
             {'name': f'{self.path_id}, ver {version_id}: data creation',
              'attribs': {'eat': 'shit',
                          'data_compute_type': 'cache',
@@ -90,14 +93,16 @@ class RenderAsset(Asset):
                          'frames': list(range(frame_range[0], frame_range[1] + 1)),
                          'requirements': {'cpu': {'min': 2, 'pref': 32},
                                           'cmem': {'min': 4, 'pref': 16}},
-                         'locked_asset_versions': lock_asset_versions
                          },
-             'env': {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
-                     'attribs': base_env_requirements
-                     }
              }
 
-        return self.create_new_generic_version(version_id, creation_task_parameters, dependencies)
+        generation_task_parameters = GenerationTaskParameters(lock_asset_versions,
+                                                              creation_task_attributes,
+                                                              {'name': 'StandardEnvironmentResolver',  # we assume a single environment resolver is defined for the whole pipeline
+                                                               'attribs': base_env_requirements}
+                                                              )
+
+        return self.create_new_generic_version(version_id, generation_task_parameters, dependencies)
 
     @classmethod
     def _get_version_class(cls):

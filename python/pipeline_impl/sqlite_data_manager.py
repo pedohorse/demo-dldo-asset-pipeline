@@ -16,6 +16,7 @@ from lifeblood_client.submitting import NewTask, EnvironmentResolverArguments
 from pipeline.asset_data import AssetVersionData, AssetData, DataState
 from pipeline.data_access_interface import DataAccessInterface, NotFoundError
 from pipeline.future import ConditionCheckerFuture, FutureResult
+from pipeline.generation_task_parameters import GenerationTaskParameters
 
 from typing import Iterable, Tuple, List, Union, Optional
 
@@ -94,7 +95,7 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             assdata = AssetVersionData(path_id=data['pathid'],
                                        asset_path_id=data['asset_pathid'],
                                        version_id=(data['version_0'], data['version_1'], data['version_2']),
-                                       data_producer_task_attrs=json.loads(data['data_task_attr']),
+                                       data_producer_task_attrs=GenerationTaskParameters.deserialize(data['data_task_attr']),
                                        data_availability=DataState(data['data_produced']),
                                        data_calculator_id=data['data_calculator_id'],
                                        data=json.loads(data['data']) if data['data'] is not None else None)
@@ -113,10 +114,11 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                 datas.extend(cur.fetchall())
         ret = []
         for data in datas:
+
             assdata = AssetVersionData(path_id=data['pathid'],
                                        asset_path_id=data['asset_pathid'],
                                        version_id=(data['version_0'], data['version_1'], data['version_2']),
-                                       data_producer_task_attrs=json.loads(data['data_task_attr']),
+                                       data_producer_task_attrs=GenerationTaskParameters.deserialize(data['data_task_attr']),
                                        data_availability=DataState(data['data_produced']),
                                        data_calculator_id=data['data_calculator_id'],
                                        data=json.loads(data['data']) if data['data'] is not None else None)
@@ -156,7 +158,7 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                         (pathid,
                          asset_path_id,
                          *version_data.version_id,
-                         json.dumps(version_data.data_producer_task_attrs)))
+                         version_data.data_producer_task_attrs.serialize()))
 
             if dependencies:
                 cur.executemany('INSERT INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
@@ -204,17 +206,22 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                 return fut
 
             # schedule data coputation
-            task_stuff = json.loads(data['data_task_attr'])
+            data_generation_data = GenerationTaskParameters.deserialize(data['data_task_attr'])
+            task_stuff = data_generation_data.attributes  # this contains lifeblood-formated stuff, maybe TODO: standardize, generalize, type
             task_stuff.setdefault('attribs', {})['asset_version_id'] = path_id
-            task_stuff.setdefault('attribs', {})['asset_id'] = data['asset_pathid']
-            task_stuff.setdefault('attribs', {})['version'] = version_string
+            task_stuff['attribs']['asset_id'] = data['asset_pathid']
+            task_stuff['attribs']['version'] = version_string
+            task_stuff['attribs']['locked_asset_versions'] = data_generation_data.version_lock_mapping
+            # note that at this point data_generation_data.attributes are tainted, DON'T use it later here, or just copy it above
             if in_lifeblood_runtime:
+                # TODO: this does not take env into account...
                 task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], blocking=True)
             else:
                 task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
                                node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
                                scheduler_addr=self.__lb_addr,
-                               env_args=EnvironmentResolverArguments(task_stuff.get('env', {}).get('name', 'StandardEnvironmentResolver'), task_stuff.get('env', {}).get('attribs', {})),
+                               env_args=EnvironmentResolverArguments(data_generation_data.environment_arguments.get('name', 'StandardEnvironmentResolver'),
+                                                                     data_generation_data.environment_arguments.get('attribs', {})),
                                task_attributes=task_stuff.get('attribs', {}),
                                priority=task_stuff.get('priority', 50)).submit()
                 task_id = task.id
