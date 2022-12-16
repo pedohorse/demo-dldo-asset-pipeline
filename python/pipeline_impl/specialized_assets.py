@@ -2,7 +2,7 @@ from getpass import getuser
 from pipeline.asset import Asset, AssetVersion, VersionType
 from pipeline.generation_task_parameters import GenerationTaskParameters
 
-from typing import Optional, Tuple, Iterable, Dict
+from typing import Optional, Tuple, Iterable, Dict, List
 
 
 class CacheAsset(Asset):
@@ -12,7 +12,7 @@ class CacheAsset(Asset):
     def create_new_version(self, source: Tuple[str, str], frame_range: Tuple[int, int], is_sim: bool = False, version_id: Optional[VersionType] = None,
                            *, extra_env_requirements: Optional[Dict[str, str]] = None,
                            lock_asset_versions: Dict[str, str] = None,
-                           dependencies: Iterable["AssetVersion"] = ()) -> AssetVersion:
+                           dependencies: Iterable["AssetVersion"] = ()) -> Tuple["AssetVersion", List["AssetVersion"]]:
         """
 
         :param source: hip file path, and rop node path that generate final cache
@@ -75,7 +75,7 @@ class RenderAsset(Asset):
     def create_new_version(self, source: Tuple[str, str], frame_range: Tuple[int, int], version_id: Optional[VersionType] = None,
                            *, extra_env_requirements: Optional[Dict[str, str]] = None,
                            lock_asset_versions: Dict[str, str],
-                           dependencies: Iterable["AssetVersion"] = ()) -> AssetVersion:
+                           dependencies: Iterable["AssetVersion"] = ()) -> Tuple["AssetVersion", List["AssetVersion"]]:
 
         base_env_requirements = {'user': getuser()}  # theoretically all packages should be retrieved here from env, but we have a simplified example
         if extra_env_requirements:
