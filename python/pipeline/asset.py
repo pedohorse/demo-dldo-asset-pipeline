@@ -49,7 +49,10 @@ class Asset:
 
         return self._get_version_class()(self, version_id)
 
-    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: Optional[GenerationTaskParameters] = None, dependencies: Iterable["AssetVersion"] = ()) -> "AssetVersion":
+    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: Optional[GenerationTaskParameters] = None, dependencies: Iterable["AssetVersion"] = ()) -> Tuple["AssetVersion", List["AssetVersion"]]:
+        """
+        :returns: newly created asset version, and ALL other asset versions whos creation was triggered by that version
+        """
         if version_id is not None:
             version_id = normalize_version(version_id)
         version_data = AssetVersionData(None,
@@ -60,7 +63,29 @@ class Asset:
                                         None,
                                         None)
         version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
-        return self._get_version_class()(self, version_data.version_id)
+        new_version = self._get_version_class()(self, version_data.version_id)
+        triggered_versions = self._trigger_relevant_asset_templates(new_version)
+        return new_version, triggered_versions
+
+    def _trigger_relevant_asset_templates(self, asset_version: "AssetVersion") -> List["AssetVersion"]:
+        """
+        trigger creation of new versions from all relevant templates for which asset_path_id is input.
+        should recursively call itself on all version it itself creates too
+        """
+        # TODO: this assumes dependencies are a tree, instead implement an arbitrary graph
+        asset = asset_version.asset
+        result = []
+        for template_data in self._get_data_provider().get_asset_templates_triggered_by(asset.path_id):
+            data_producer_attrs = template_data.data_producer_task_attrs
+            data_producer_attrs.version_lock_mapping = data_producer_attrs.version_lock_mapping.copy()
+            data_producer_attrs.version_lock_mapping[asset.path_id] = asset_version.path_id
+
+            fixed_dependencies = [AssetVersion.from_path_id(self._get_data_provider(), x) for x in self._get_data_provider().get_template_fixed_dependencies(asset.path_id)]
+            dependencies = [*fixed_dependencies,
+                            *(AssetVersion.from_path_id(self._get_data_provider(), x) for x in data_producer_attrs.version_lock_mapping.values())]
+            new_version, triggered_versions = asset.create_new_generic_version(None, data_producer_attrs, dependencies)
+            result.extend([new_version, *triggered_versions])
+        return result
 
     def _get_data_provider(self) -> DataAccessInterface:
         return self.__data_provider
@@ -131,13 +156,16 @@ class AssetVersion:
         data = self._fresh_asset_version_data()
         return data.data[key]
 
+    # TODO: all dependencies are SUPPOSED to return instances of proper classes, not of this one
+    #  therefore they need to know director, but i don't want this class to depend on director
+    #  so hmmmmmm...
     def get_dependencies(self) -> List["AssetVersion"]:
         data = self._fresh_asset_version_data()
-        return [self.from_path_id(self.data_provider, x) for x in self.data_provider.get_version_dependencies(data.path_id)]
+        return [AssetVersion.from_path_id(self.data_provider, x) for x in self.data_provider.get_version_dependencies(data.path_id)]
 
     def get_dependants(self) -> List["AssetVersion"]:
         data = self._fresh_asset_version_data()
-        return [self.from_path_id(self.data_provider, x) for x in self.data_provider.get_dependent_versions(data.path_id)]
+        return [AssetVersion.from_path_id(self.data_provider, x) for x in self.data_provider.get_dependent_versions(data.path_id)]
 
     def add_dependencies(self, dependencies: Iterable["AssetVersion"]):
         self.data_provider.add_dependencies(self.path_id, (dep.path_id for dep in dependencies))
