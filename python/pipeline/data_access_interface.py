@@ -1,5 +1,5 @@
 from typing import Iterable, Tuple, List, Optional
-from .asset_data import AssetData, AssetVersionData
+from .asset_data import AssetData, AssetVersionData, AssetTemplateData
 from .future import FutureResult
 
 
@@ -52,6 +52,31 @@ class DataAccessInterface:
     def create_new_asset(self, asset_type: str, asset_data: AssetData) -> AssetData:
         raise NotImplementedError()
 
+    # templates
+    def get_asset_template_data_for_asset_path_id(self, asset_path_id: str) -> AssetTemplateData:
+        datas = self.get_asset_template_datas_for_asset_path_id([asset_path_id])
+        if len(datas) == 0:
+            raise NotFoundError()
+        return datas[0]
+
+    def get_asset_template_datas_for_asset_path_id(self, asset_path_ids: Iterable[str]) -> List[AssetTemplateData]:
+        """
+        get templates for generating versions of assets defined by asset_path_ids
+        """
+        raise NotImplementedError()
+
+    def create_asset_template(self, asset_template_data: AssetTemplateData, input_asset_path_ids: Iterable[str]) -> AssetTemplateData:
+        """
+        create new asset template, that will be triggered by any asset from input_asset_path_ids
+        """
+        raise NotImplementedError()
+
+    def get_asset_templates_triggered_by(self, asset_path_id: str) -> List[AssetTemplateData]:
+        """
+        get all asset templates that will be triggered by a change in "asset_path_id" asset
+        """
+        raise NotImplementedError()
+
     # scheduling execution
     def schedule_data_computation_for_asset_version(self, path_id: str) -> FutureResult:
         """
@@ -86,11 +111,15 @@ class DataAccessInterface:
         """
         raise NotImplementedError()
 
-    def remove_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):
+    def remove_dependencies(self, version_path_id: str, dependency_path_ids: Iterable[str]):  # TODO: remove?
         """
         remove dependencies from a given version_path_id
         if given dependency does not exist - this function should ignore it
         """
         raise NotImplementedError()
 
-
+    def get_template_fixed_dependencies(self, asset_path_id: str) -> Iterable[str]:
+        """
+        a template has triggers (assets), and fixed deps (asset versions)
+        """
+        raise NotImplementedError()
