@@ -28,3 +28,9 @@ class AssetVersionData:
     data_availability: DataState
     data_calculator_id: int
     data: Optional[dict]
+
+
+@dataclass
+class AssetTemplateData:
+    asset_path_id: str
+    data_producer_task_attrs: GenerationTaskParameters
