@@ -311,6 +311,25 @@ CREATE TABLE IF NOT EXISTS "asset_version_dependencies" (
     FOREIGN KEY("depends_on") REFERENCES "asset_versions"("pathid") ON UPDATE CASCADE ON DELETE RESTRICT,
     UNIQUE(dependant,depends_on)
 );
+CREATE TABLE IF NOT EXISTS "asset_templates" (
+    "asset_path_id" TEXT NOT NULL,
+    "data_task_attr"    TEXT NOT NULL,
+    PRIMARY KEY("asset_path_id"),
+    FOREIGN KEY("asset_path_id") REFERENCES "assets"("pathid") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "asset_versions_asset_pathid_idx" ON "asset_versions" (
+    "asset_pathid"
+);
+
+CREATE INDEX IF NOT EXISTS "asset_version_dependencies_dependant" ON "asset_version_dependencies" (
+    "dependant"
+);
+
+CREATE INDEX IF NOT EXISTS "asset_version_dependencies_depends_on" ON "asset_version_dependencies" (
+    "depends_on"
+);
+
 COMMIT;
 PRAGMA journal_mode=wal;
 PRAGMA synchronous=NORMAL;
