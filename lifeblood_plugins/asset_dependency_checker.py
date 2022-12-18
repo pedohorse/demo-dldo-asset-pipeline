@@ -48,12 +48,18 @@ class AssetDependencyChecker(BaseNode):
 
         spawns = []
         if create_data_task:
-            script = f'for dep_id in {repr([x.path_id for x in deps])}:\n' \
+            script = f'import lifeblood_connection\n' \
+                     f'task_ids = []\n' \
+                     f'for dep_id in {repr([x.path_id for x in deps])}:\n' \
                      f'    from demo_pipeline import get_director\n' \
-                     f'    get_director().get_asset_version(dep_id).schedule_data_calculation_if_needed()\n'
+                     f'    future = get_director().get_asset_version(dep_id).schedule_data_calculation_if_needed()\n' \
+                     f'    # future is LifebloodFuture\n' \
+                     f'    task_ids.append(future.get_lifeblood_task().id)\n' \
+                     f'lifeblood_connection.set_attributes({{"deps": task_ids}}, blocking=True)\n'
+                    # TODO: if dep is already scheduled - this connection is lost completely here
             inv = InvocationJob(['python', ':/script.py'])
             inv.set_extra_file('script.py', script)
-            return ProcessingResult(inv)
+            res = ProcessingResult(inv)
         else:
             for dep in deps:
                 attribs = dict(base_attribs)
@@ -62,4 +68,5 @@ class AssetDependencyChecker(BaseNode):
                 spawns.append(TaskSpawn(f'asset {dep.asset.name}, version: {str(dep.version_id)}',
                                         task_attributes=attribs))
 
-            return ProcessingResult(spawn=spawns)
+            res = ProcessingResult(spawn=spawns)
+        return res
