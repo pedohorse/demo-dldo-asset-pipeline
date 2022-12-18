@@ -13,7 +13,7 @@ except ImportError:
 from lifeblood_client.query import Task
 from lifeblood_client.submitting import NewTask, EnvironmentResolverArguments
 
-from pipeline.asset_data import AssetVersionData, AssetData, DataState
+from pipeline.asset_data import AssetVersionData, AssetData, DataState, AssetTemplateData
 from pipeline.data_access_interface import DataAccessInterface, NotFoundError
 from pipeline.future import ConditionCheckerFuture, FutureResult
 from pipeline.generation_task_parameters import GenerationTaskParameters
@@ -34,6 +34,9 @@ class LifebloodTaskFuture(ConditionCheckerFuture):
         we expect lifeblood graph to be responsible for data setting to DB
         """
         return self._check() and self.__task.state != Task.TaskState.ERROR
+
+    def get_lifeblood_task(self) -> Task:
+        return self.__task
 
     def __init__(self, addr, task_id):
         self.__task = Task(addr, task_id)
@@ -280,6 +283,74 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                             ((version_path_id, dep) for dep in dependency_path_ids))
             con.commit()
 
+    # templates
+    def get_asset_template_datas_for_asset_path_id(self, asset_path_ids: Iterable[str]) -> List[AssetTemplateData]:
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            datas = []
+            for asset_path_id in asset_path_ids:  # not optimal
+                cur.execute('SELECT asset_path_id, data_task_attr FROM asset_templates WHERE asset_path_id == ?',
+                            (asset_path_id,))
+                datas.extend(cur.fetchall())
+
+        assdatas = []
+        for data in datas:
+            assdatas.append(AssetTemplateData(data['asset_path_id'],
+                                              GenerationTaskParameters.deserialize(data['data_task_attr'])
+                                              ))
+        return assdatas
+
+    def create_asset_template(self, asset_template_data: AssetTemplateData,
+                                    trigger_asset_path_ids: Iterable[str],
+                                    asset_version_dependencies: Iterable[str]) -> AssetTemplateData:
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            con.execute('PRAGMA foreign_keys = ON')  # that fucker is OFF by default, remember that!
+            cur = con.cursor()
+            cur.execute('INSERT OR REPLACE INTO asset_templates (asset_path_id, data_task_attr) VALUES (?, ?)',
+                        (asset_template_data.asset_path_id,
+                         asset_template_data.data_producer_task_attrs.serialize()))
+            cur.executemany('INSERT INTO asset_template_version_inputs (asset_path_id, depends_on) VALUES (?, ?)',
+                            ((asset_template_data.asset_path_id, x) for x in asset_version_dependencies))
+            cur.executemany('INSERT INTO asset_template_trigger_inputs (asset_path_id, depends_on) VALUES (?, ?)',
+                            ((asset_template_data.asset_path_id, x) for x in trigger_asset_path_ids))
+            con.commit()
+        return asset_template_data
+
+    def get_asset_templates_triggered_by(self, asset_path_id: str) -> List[AssetTemplateData]:
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute('SELECT asset_templates.asset_path_id, data_task_attr '
+                        'FROM asset_templates INNER JOIN asset_template_trigger_inputs '
+                        'ON asset_template_trigger_inputs.asset_path_id == asset_templates.asset_path_id '
+                        'WHERE depends_on == ?', (asset_path_id,))
+            datas = cur.fetchall()
+        assdatas = []
+        for data in datas:
+            assdatas.append(AssetTemplateData(data['asset_path_id'],
+                                              GenerationTaskParameters.deserialize(data['data_task_attr'])
+                                              ))
+        return assdatas
+
+    def get_template_fixed_dependencies(self, asset_path_id: str) -> Iterable[str]:
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute('SELECT depends_on '
+                        'FROM asset_template_version_inputs '
+                        'WHERE asset_path_id == ?', (asset_path_id,))
+            datas = cur.fetchall()
+        return [x['depends_on'] for x in datas]
+
+    # files location
+    def get_pipeline_cache_root(self) -> Path:
+        return Path(os.environ['PIPELINE_STORAGE_ROOT'])/'geo'
+
+    def get_pipeline_source_root(self) -> Path:
+        return Path(os.environ['PIPELINE_STORAGE_ROOT'])/'source'
+
 
 _init_script = \
 '''
@@ -312,10 +383,24 @@ CREATE TABLE IF NOT EXISTS "asset_version_dependencies" (
     UNIQUE(dependant,depends_on)
 );
 CREATE TABLE IF NOT EXISTS "asset_templates" (
-    "asset_path_id" TEXT NOT NULL,
+    "asset_path_id" TEXT NOT NULL UNIQUE,
     "data_task_attr"    TEXT NOT NULL,
     PRIMARY KEY("asset_path_id"),
     FOREIGN KEY("asset_path_id") REFERENCES "assets"("pathid") ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS "asset_template_version_inputs" (
+    "asset_path_id" TEXT NOT NULL,
+    "depends_on"    TEXT NOT NULL,
+    FOREIGN KEY("asset_path_id") REFERENCES asset_templates("asset_path_id") ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY("depends_on") REFERENCES "asset_versions"("pathid") ON UPDATE CASCADE ON DELETE RESTRICT,
+    UNIQUE("asset_path_id","depends_on")
+);
+CREATE TABLE IF NOT EXISTS "asset_template_trigger_inputs" (
+    "asset_path_id" TEXT NOT NULL,
+    "depends_on"    TEXT NOT NULL,
+    FOREIGN KEY("asset_path_id") REFERENCES asset_templates("asset_path_id") ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY("depends_on") REFERENCES "assets"("pathid") ON UPDATE CASCADE ON DELETE RESTRICT,
+    UNIQUE("asset_path_id","depends_on")
 );
 
 CREATE INDEX IF NOT EXISTS "asset_versions_asset_pathid_idx" ON "asset_versions" (
