@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Iterable, Tuple, List, Optional
 from .asset_data import AssetData, AssetVersionData, AssetTemplateData
 from .future import FutureResult
@@ -65,7 +66,9 @@ class DataAccessInterface:
         """
         raise NotImplementedError()
 
-    def create_asset_template(self, asset_template_data: AssetTemplateData, input_asset_path_ids: Iterable[str]) -> AssetTemplateData:
+    def create_asset_template(self, asset_template_data: AssetTemplateData,
+                                    trigger_asset_path_ids: Iterable[str],
+                                    asset_version_dependencies: Iterable[str]) -> AssetTemplateData:
         """
         create new asset template, that will be triggered by any asset from input_asset_path_ids
         """
@@ -122,4 +125,11 @@ class DataAccessInterface:
         """
         a template has triggers (assets), and fixed deps (asset versions)
         """
+        raise NotImplementedError()
+
+    # files location
+    def get_pipeline_cache_root(self) -> Path:
+        raise NotImplementedError()
+
+    def get_pipeline_source_root(self) -> Path:
         raise NotImplementedError()
