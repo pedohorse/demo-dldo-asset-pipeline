@@ -1,5 +1,5 @@
 import os
-from pipeline_impl.specialized_director import PipelineDirector, Director
+from pipeline_impl.specialized_director import SpecializedAssetFactory, PipelineDirector, Director
 from pipeline.data_access_interface import NotFoundError  # export
 from pipeline_impl.sqlite_data_manager import SqliteDataManagerWithLifeblood
 from pipeline_impl.asset_uri_handler import AssetUriHandler
@@ -13,8 +13,8 @@ __director: PipelineDirector = PipelineDirector(__dm)
 __director.register_uri_handler(AssetUriHandler(__director))
 __director.register_uri_handler(AssetVersionUriHandler(__director))
 
-__director.register_asset_type(CacheAsset)
-__director.register_asset_type(RenderAsset)
+__director.register_asset_type(SpecializedAssetFactory(CacheAsset, __director))
+__director.register_asset_type(SpecializedAssetFactory(RenderAsset, __director))
 
 
 def get_director() -> Director:
