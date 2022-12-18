@@ -1,12 +1,12 @@
 import json
 import os
-from .asset_data import AssetData, AssetVersionData, DataState
+from .asset_data import AssetData, AssetVersionData, DataState, AssetTemplateData
 from .data_access_interface import DataAccessInterface
 from .future import FutureResult, CompletedFuture
 from .utils import normalize_version, denormalize_version, VersionType
 from .generation_task_parameters import GenerationTaskParameters
 
-from typing import Union, Tuple, List, Optional, Iterable
+from typing import Union, Tuple, List, Optional, Iterable, Type, Dict
 
 
 class DataNotYetAvailable(Exception):
@@ -49,7 +49,10 @@ class Asset:
 
         return self._get_version_class()(self, version_id)
 
-    def create_new_generic_version(self, version_id: Optional[VersionType] = None, creation_task_parameters: Optional[GenerationTaskParameters] = None, dependencies: Iterable["AssetVersion"] = ()) -> Tuple["AssetVersion", List["AssetVersion"]]:
+    def create_new_generic_version(self, version_id: Optional[VersionType] = None,
+                                   creation_task_parameters: Optional[GenerationTaskParameters] = None,
+                                   dependencies: Iterable["AssetVersion"] = (),
+                                   create_template_from_locks: bool = False) -> Tuple["AssetVersion", List["AssetVersion"]]:
         """
         :returns: newly created asset version, and ALL other asset versions whos creation was triggered by that version
         """
@@ -65,6 +68,16 @@ class Asset:
         version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
         new_version = self._get_version_class()(self, version_data.version_id)
         triggered_versions = self._trigger_relevant_asset_templates(new_version)
+        if create_template_from_locks and creation_task_parameters:
+            # split dependencies into dynamic and static ones based on the lock dict
+            locks = creation_task_parameters.version_lock_mapping
+            if len(locks) > 0:  # template only makes sense if there are dynamic versions
+                # only deps that are not part of the lock, static deps
+                template_version_deps = [x.path_id for x in dependencies if x.path_id not in set(locks.values())]
+                trigger_asset_pathids = list(locks.keys())
+                self._get_data_provider().create_asset_template(AssetTemplateData(self.path_id, creation_task_parameters),
+                                                                trigger_asset_pathids,
+                                                                template_version_deps)
         return new_version, triggered_versions
 
     def _trigger_relevant_asset_templates(self, asset_version: "AssetVersion") -> List["AssetVersion"]:
@@ -76,6 +89,7 @@ class Asset:
         asset = asset_version.asset
         result = []
         for template_data in self._get_data_provider().get_asset_templates_triggered_by(asset.path_id):
+            triggered_asset = Asset(template_data.asset_path_id, self._get_data_provider())
             data_producer_attrs = template_data.data_producer_task_attrs
             data_producer_attrs.version_lock_mapping = data_producer_attrs.version_lock_mapping.copy()
             data_producer_attrs.version_lock_mapping[asset.path_id] = asset_version.path_id
@@ -83,7 +97,7 @@ class Asset:
             fixed_dependencies = [AssetVersion.from_path_id(self._get_data_provider(), x) for x in self._get_data_provider().get_template_fixed_dependencies(asset.path_id)]
             dependencies = [*fixed_dependencies,
                             *(AssetVersion.from_path_id(self._get_data_provider(), x) for x in data_producer_attrs.version_lock_mapping.values())]
-            new_version, triggered_versions = asset.create_new_generic_version(None, data_producer_attrs, dependencies)
+            new_version, triggered_versions = triggered_asset.create_new_generic_version(None, data_producer_attrs, dependencies)
             result.extend([new_version, *triggered_versions])
         return result
 
