@@ -29,6 +29,8 @@ def _get_locked_versions_iter(usd_node):
         src_uri = usd_node.GetAttribute('pathid_source_uri').Get()
         if dynamic:
             return {pathid}
+        else:  # not going deeper, dynamic or not
+            return {}
 
     res = set()
     for child in usd_node.GetChildren():
