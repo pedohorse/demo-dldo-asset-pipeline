@@ -35,7 +35,7 @@ class HipSourcedAssetCommon(SpecializedAssetBase):
                          'hipfile': str(source_hip),
                          'hiporig': str(mask_as_hip),
                          'hipdriver': driver_node_path,
-                         'frames': list(range(frame_range[0], frame_range[1] + 1)),
+                         'frames': list(range(int(frame_range[0]), int(frame_range[1]) + 1)),
                          'requirements': {'cpu': {'min': 2, 'pref': 32},
                                           'cmem': {'min': 4, 'pref': 16}},
                          },
@@ -124,6 +124,10 @@ class RenderAsset(HipSourcedAssetCommon):
             lock_asset_versions=lock_asset_versions,
             extra_env_requirements=extra_env_requirements
         )
+
+        generation_task_parameters.attributes['attribs']['requirements_render'] = \
+            {'cpu': {'min': 2, 'pref': 8},
+             'cmem': {'min': 2, 'pref': 6}}
 
         return self.create_new_generic_version(version_id,
                                                creation_task_parameters=generation_task_parameters,
