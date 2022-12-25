@@ -91,12 +91,14 @@ class Asset:
         for template_data in self._get_data_provider().get_asset_templates_triggered_by(asset.path_id):
             triggered_asset = Asset(template_data.asset_path_id, self._get_data_provider())
             data_producer_attrs = template_data.data_producer_task_attrs
-            data_producer_attrs.version_lock_mapping = data_producer_attrs.version_lock_mapping.copy()
+            # data_producer_attrs.version_lock_mapping = data_producer_attrs.version_lock_mapping.copy()
+
             data_producer_attrs.version_lock_mapping[asset.path_id] = asset_version.path_id
 
-            fixed_dependencies = [AssetVersion.from_path_id(self._get_data_provider(), x) for x in self._get_data_provider().get_template_fixed_dependencies(asset.path_id)]
+            fixed_dependencies = [AssetVersion.from_path_id(self._get_data_provider(), x) for x in self._get_data_provider().get_template_fixed_dependencies(template_data.asset_path_id)]
             dependencies = [*fixed_dependencies,
                             *(AssetVersion.from_path_id(self._get_data_provider(), x) for x in data_producer_attrs.version_lock_mapping.values())]
+            self._get_data_provider().update_asset_template_data(template_data)
             new_version, triggered_versions = triggered_asset.create_new_generic_version(None, data_producer_attrs, dependencies)
             result.extend([new_version, *triggered_versions])
         return result
@@ -111,6 +113,9 @@ class Asset:
     @classmethod
     def type_name(cls):
         return cls.__name__
+
+    def __hash__(self):
+        return hash(self.path_id)
 
 
 class AssetVersion:
@@ -183,3 +188,6 @@ class AssetVersion:
 
     def add_dependencies(self, dependencies: Iterable["AssetVersion"]):
         self.data_provider.add_dependencies(self.path_id, (dep.path_id for dep in dependencies))
+
+    def __hash__(self):
+        return hash(self.path_id)
