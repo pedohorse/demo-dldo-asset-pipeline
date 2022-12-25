@@ -128,6 +128,16 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             ret.append(assdata)
         return ret
 
+    def get_leaf_asset_version_pathids(self) -> List[str]:
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute('SELECT "pathid" FROM asset_versions WHERE (NOT EXISTS(SELECT "pathid" FROM asset_version_dependencies '
+                        'WHERE asset_version_dependencies.depends_on == asset_versions.pathid))')
+
+            return [x['pathid'] for x in cur.fetchall()]
+
+
     def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]):
         """
         if version_data.pathid is None - it will be assigned automatically based on asset_path_id and version_id
@@ -164,7 +174,7 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
                          version_data.data_producer_task_attrs.serialize()))
 
             if dependencies:
-                cur.executemany('INSERT INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
+                cur.executemany('INSERT OR IGNORE INTO asset_version_dependencies (dependant, depends_on) VALUES (?, ?)',
                                 ((pathid, dep) for dep in dependencies))
 
             # update version_data fields
@@ -318,6 +328,16 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             con.commit()
         return asset_template_data
 
+    def update_asset_template_data(self, asset_template_data: AssetTemplateData):
+        with sqlite3.connect(self.__db_path) as con:
+            con.row_factory = sqlite3.Row
+            con.execute('PRAGMA foreign_keys = ON')  # that fucker is OFF by default, remember that!
+            cur = con.cursor()
+            cur.execute('UPDATE asset_templates SET data_task_attr=? WHERE asset_path_id==?',
+                        (asset_template_data.data_producer_task_attrs.serialize(),
+                         asset_template_data.asset_path_id))
+            con.commit()
+
     def get_asset_templates_triggered_by(self, asset_path_id: str) -> List[AssetTemplateData]:
         with sqlite3.connect(self.__db_path) as con:
             con.row_factory = sqlite3.Row
@@ -345,6 +365,9 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
         return [x['depends_on'] for x in datas]
 
     # files location
+    def get_pipeline_render_root(self) -> Path:
+        return Path(os.environ['PIPELINE_STORAGE_ROOT'])/'render'
+
     def get_pipeline_cache_root(self) -> Path:
         return Path(os.environ['PIPELINE_STORAGE_ROOT'])/'geo'
 
