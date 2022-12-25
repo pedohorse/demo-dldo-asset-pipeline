@@ -1,6 +1,6 @@
 import os
 from pipeline_impl.specialized_director import SpecializedAssetFactory, PipelineDirector, Director
-from pipeline.data_access_interface import NotFoundError  # export
+from pipeline.data_access_interface import NotFoundError, TaskSchedulerNotAvailable  # export
 from pipeline_impl.sqlite_data_manager import SqliteDataManagerWithLifeblood
 from pipeline_impl.asset_uri_handler import AssetUriHandler
 from pipeline_impl.asset_version_uri_handler import AssetVersionUriHandler
