@@ -8,6 +8,13 @@ class NotFoundError(RuntimeError):
     pass
 
 
+class TaskSchedulerNotAvailable(RuntimeError):
+    """
+    base exception for everything related to not being able to connect to data computation mechanism
+    """
+    pass
+
+
 class DataAccessInterface:
     def get_asset_data(self, asset_path_id: str) -> AssetData:
         asset_datas = self.get_asset_datas((asset_path_id,))
@@ -46,6 +53,14 @@ class DataAccessInterface:
     def get_asset_version_datas_from_path_id(self, asset_version_path_id: Iterable[str]) -> List[AssetVersionData]:
         raise NotImplementedError()
 
+    def get_leaf_asset_version_pathids(self) -> List[str]:
+        """
+        get ALL asset versions that NOTHING DEPENDS ON
+
+        :return:
+        """
+        raise NotImplementedError()
+
     # setters
     def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]) -> AssetVersionData:
         raise NotImplementedError()
@@ -72,6 +87,9 @@ class DataAccessInterface:
         """
         create new asset template, that will be triggered by any asset from input_asset_path_ids
         """
+        raise NotImplementedError()
+
+    def update_asset_template_data(self, asset_template_data: AssetTemplateData):
         raise NotImplementedError()
 
     def get_asset_templates_triggered_by(self, asset_path_id: str) -> List[AssetTemplateData]:
@@ -128,6 +146,9 @@ class DataAccessInterface:
         raise NotImplementedError()
 
     # files location
+    def get_pipeline_render_root(self) -> Path:
+        raise NotImplementedError()
+
     def get_pipeline_cache_root(self) -> Path:
         raise NotImplementedError()
 
