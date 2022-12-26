@@ -89,6 +89,11 @@ class Asset:
         asset = asset_version.asset
         result = []
         for template_data in self._get_data_provider().get_asset_templates_triggered_by(asset.path_id):
+            # first of all - update template_data from DB.
+            # due to strange recursion here - it is possible for template data to become outdated
+            # TODO: maybe implement generator for get_asset_templates_triggered_by ?
+            template_data = self._get_data_provider().get_asset_template_data_for_asset_path_id(template_data.asset_path_id)
+
             triggered_asset = Asset(template_data.asset_path_id, self._get_data_provider())
             data_producer_attrs = template_data.data_producer_task_attrs
             # data_producer_attrs.version_lock_mapping = data_producer_attrs.version_lock_mapping.copy()
