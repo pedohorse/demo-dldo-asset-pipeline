@@ -4,9 +4,9 @@ from .asset_data import AssetData, AssetVersionData, DataState, AssetTemplateDat
 from .data_access_interface import DataAccessInterface
 from .future import FutureResult, CompletedFuture
 from .utils import normalize_version, denormalize_version, VersionType
-from .generation_task_parameters import GenerationTaskParameters
+from .generation_task_parameters import GenerationTaskParameters, EnvironmentResolverParameters
 
-from typing import Union, Tuple, List, Optional, Iterable, Type, Dict
+from typing import Union, Tuple, List, Optional, Iterable, Type, Dict, Set
 
 
 class DataNotYetAvailable(Exception):
@@ -49,6 +49,21 @@ class Asset:
 
         return self._get_version_class()(self, version_id)
 
+    def _create_single_new_generic_version(self, version_id: Optional[VersionType] = None,
+                                           creation_task_parameters: Optional[GenerationTaskParameters] = None,
+                                           dependencies: Iterable["AssetVersion"] = ()) -> "AssetVersion":
+        if version_id is not None:
+            version_id = normalize_version(version_id)
+        version_data = AssetVersionData(None,
+                                        self.path_id,
+                                        version_id,
+                                        creation_task_parameters or GenerationTaskParameters({}, {}, EnvironmentResolverParameters('', {})),
+                                        DataState.NOT_COMPUTED,
+                                        None,
+                                        None)
+        version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
+        return self._get_version_class()(self, version_data.version_id)
+
     def create_new_generic_version(self, version_id: Optional[VersionType] = None,
                                    creation_task_parameters: Optional[GenerationTaskParameters] = None,
                                    dependencies: Iterable["AssetVersion"] = (),
@@ -58,16 +73,12 @@ class Asset:
         """
         if version_id is not None:
             version_id = normalize_version(version_id)
-        version_data = AssetVersionData(None,
-                                        self.path_id,
-                                        version_id,
-                                        creation_task_parameters or GenerationTaskParameters({}, {}, {}),
-                                        DataState.NOT_COMPUTED,
-                                        None,
-                                        None)
-        version_data = self._get_data_provider().publish_new_asset_version(self.path_id, version_data, [dep.path_id for dep in dependencies])
-        new_version = self._get_version_class()(self, version_data.version_id)
-        triggered_versions = self._trigger_relevant_asset_templates(new_version)
+        new_version = self._create_single_new_generic_version(version_id, creation_task_parameters, dependencies)
+
+        # trigger all downstream asset version creation
+        triggered_versions = self._trigger_relevant_asset_templates_nonrecursive(new_version)
+
+        # create new templates if needed
         if create_template_from_locks and creation_task_parameters:
             # split dependencies into dynamic and static ones based on the lock dict
             locks = creation_task_parameters.version_lock_mapping
@@ -80,11 +91,63 @@ class Asset:
                                                                 template_version_deps)
         return new_version, triggered_versions
 
+    def _trigger_relevant_asset_templates_nonrecursive(self, asset_version: "AssetVersion") -> List["AssetVersion"]:
+        asset = asset_version.asset
+        # first construct tree and order
+        order = []
+        preorder = []
+        repeats = set()
+        template_to_inputs: Dict[str, Set[str]] = {}
+        templates: Dict[str, AssetTemplateData] = {}
+        new_vers: Dict[str, str] = {asset.path_id: asset_version.path_id}
+
+        queue_of_stuff = [(asset.path_id, x) for x in self._get_data_provider().get_asset_templates_triggered_by(asset.path_id)]
+        for triggered_path_id, template_data in queue_of_stuff:
+            preorder.insert(0, template_data.asset_path_id)
+            template_to_inputs.setdefault(template_data.asset_path_id, set()).add(triggered_path_id)
+            if template_data.asset_path_id not in templates:
+                templates[template_data.asset_path_id] = template_data
+            queue_of_stuff.extend((template_data.asset_path_id, x) for x in self._get_data_provider().get_asset_templates_triggered_by(template_data.asset_path_id))
+
+        for path_id in preorder:
+            if path_id in repeats:
+                continue
+            repeats.add(path_id)
+            order.insert(0, path_id)
+
+        assert len(order) == len(set(order)), 'something is way wrong'
+
+        # now we have the order of version creation in which all inputs are created first
+        triggered_versions = []
+        for path_id in order:
+            template_data = templates[path_id]
+            # first update template's locked versions
+            for input_path_id in template_to_inputs[path_id]:
+                assert input_path_id in new_vers, 'cannot be!'
+                assert input_path_id in template_data.data_producer_task_attrs.version_lock_mapping
+                template_data.data_producer_task_attrs.version_lock_mapping[input_path_id] = new_vers[input_path_id]
+            # save updated template
+            self._get_data_provider().update_asset_template_data(template_data)
+
+            fixed_dependencies = [AssetVersion.from_path_id(self._get_data_provider(), x) for x in self._get_data_provider().get_template_fixed_dependencies(template_data.asset_path_id)]
+            dependencies = {*fixed_dependencies,
+                            *(AssetVersion.from_path_id(self._get_data_provider(), x) for x in template_data.data_producer_task_attrs.version_lock_mapping.values())}
+
+            new_version = Asset(path_id, self._get_data_provider()) \
+                              ._create_single_new_generic_version(None,
+                                                                  creation_task_parameters=template_data.data_producer_task_attrs,
+                                                                  dependencies=dependencies)
+            triggered_versions.append(new_version)
+            new_vers[path_id] = new_version.path_id
+
+        return triggered_versions
+
     def _trigger_relevant_asset_templates(self, asset_version: "AssetVersion") -> List["AssetVersion"]:
         """
         trigger creation of new versions from all relevant templates for which asset_path_id is input.
         should recursively call itself on all version it itself creates too
         """
+        raise DeprecationWarning('no use!')
         # TODO: this assumes dependencies are a tree, instead implement an arbitrary graph
         asset = asset_version.asset
         result = []

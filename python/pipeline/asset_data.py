@@ -34,3 +34,6 @@ class AssetVersionData:
 class AssetTemplateData:
     asset_path_id: str
     data_producer_task_attrs: GenerationTaskParameters
+
+    def __hash__(self):
+        return hash(self.asset_path_id)

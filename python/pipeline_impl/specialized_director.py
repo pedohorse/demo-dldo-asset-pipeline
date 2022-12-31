@@ -1,6 +1,6 @@
 from pipeline.director import Director, AssetFactory
 from pipeline.specialized_asset_base import SpecializedAssetBase, Asset
-from .specialized_assets import CacheAsset, RenderAsset
+from .specialized_assets import CacheAsset, RenderAsset, ComposeAsset
 
 from typing import Type
 
@@ -26,4 +26,9 @@ class PipelineDirector(Director):
     def new_render_asset(self, name: str, description: str, path_id: str) -> RenderAsset:
         new_asset = self.new_asset(name, description, RenderAsset.type_name(), path_id)
         assert isinstance(new_asset, RenderAsset), 'inconsistency!'
+        return new_asset
+
+    def new_comp_asset(self, name: str, description: str, path_id: str) -> ComposeAsset:
+        new_asset = self.new_asset(name, description, ComposeAsset.type_name(), path_id)
+        assert isinstance(new_asset, ComposeAsset), 'inconsistency!'
         return new_asset

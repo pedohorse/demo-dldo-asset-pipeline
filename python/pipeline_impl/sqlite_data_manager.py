@@ -220,6 +220,10 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
 
             # schedule data coputation
             data_generation_data = GenerationTaskParameters.deserialize(data['data_task_attr'])
+
+            env_args = EnvironmentResolverArguments(data_generation_data.environment_arguments.name or 'StandardEnvironmentResolver',
+                                                    data_generation_data.environment_arguments.attribs)
+
             task_stuff = data_generation_data.attributes  # this contains lifeblood-formated stuff, maybe TODO: standardize, generalize, type
             task_stuff.setdefault('attribs', {})['asset_version_id'] = path_id
             task_stuff['attribs']['asset_id'] = data['asset_pathid']
@@ -228,13 +232,12 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             # note that at this point data_generation_data.attributes are tainted, DON'T use it later here, or just copy it above
             if in_lifeblood_runtime:
                 # TODO: this does not take env into account...
-                task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], blocking=True)
+                task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], env_arguments=env_args, blocking=True)
             else:
                 task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
                                node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
                                scheduler_addr=self.__lb_addr,
-                               env_args=EnvironmentResolverArguments(data_generation_data.environment_arguments.get('name', 'StandardEnvironmentResolver'),
-                                                                     data_generation_data.environment_arguments.get('attribs', {})),
+                               env_args=env_args,
                                task_attributes=task_stuff.get('attribs', {}),
                                priority=task_stuff.get('priority', 50)).submit()
                 task_id = task.id
