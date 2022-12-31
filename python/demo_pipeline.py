@@ -5,7 +5,7 @@ from pipeline_impl.sqlite_data_manager import SqliteDataManagerWithLifeblood
 from pipeline_impl.asset_uri_handler import AssetUriHandler
 from pipeline_impl.asset_version_uri_handler import AssetVersionUriHandler
 
-from pipeline_impl.specialized_assets import CacheAsset, RenderAsset
+from pipeline_impl.specialized_assets import CacheAsset, RenderAsset, ComposeAsset
 
 lb_addr = ('192.168.0.28', 1384)
 __dm = SqliteDataManagerWithLifeblood(os.path.join(os.environ['PIPELINE_ROOT'], 'smth.db'), lb_addr)
@@ -15,8 +15,9 @@ __director.register_uri_handler(AssetVersionUriHandler(__director))
 
 __director.register_asset_type(SpecializedAssetFactory(CacheAsset, __director))
 __director.register_asset_type(SpecializedAssetFactory(RenderAsset, __director))
+__director.register_asset_type(SpecializedAssetFactory(ComposeAsset, __director))
 
 
-def get_director() -> Director:
+def get_director() -> PipelineDirector:
     assert __director is not None
     return __director
