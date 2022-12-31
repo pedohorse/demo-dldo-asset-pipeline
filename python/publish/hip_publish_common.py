@@ -10,7 +10,7 @@ def _get_sources_iter(usd_node):
         return {pathid}
 
     res = set()
-    for child in usd_node.GetChildren():
+    for child in usd_node.GetAllChildren():
         res.update(_get_sources_iter(child))
     return res
 
@@ -33,7 +33,7 @@ def _get_locked_versions_iter(usd_node):
             return {}
 
     res = set()
-    for child in usd_node.GetChildren():
+    for child in usd_node.GetAllChildren():
         res.update(_get_locked_versions_iter(child))
     return res
 
@@ -47,7 +47,7 @@ def get_locked_versions(node):
 def __old_get_locked_versions(node):
     director = get_director()
     locks = {}
-    for child in node.stage().GetPrimAtPath('/').GetChildren():
+    for child in node.stage().GetPrimAtPath('/').GetAllChildren():
         if   not child.HasAttribute('pathid') \
           or not child.HasAttribute('pathid_resolved_dynamically') \
           or not child.HasAttribute('pathid_source_uri'):
