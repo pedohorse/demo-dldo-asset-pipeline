@@ -1,8 +1,8 @@
-from pipeline.director import Director, AssetFactory
+from pipeline.director import Director, AssetFactory, DataAccessInterface, UriHandlerBase
 from pipeline.specialized_asset_base import SpecializedAssetBase, Asset
 from .specialized_assets import CacheAsset, RenderAsset, ComposeAsset
 
-from typing import Type
+from typing import Iterable, Type
 
 
 class SpecializedAssetFactory(AssetFactory):
@@ -18,6 +18,13 @@ class SpecializedAssetFactory(AssetFactory):
 
 
 class PipelineDirector(Director):
+    def __init__(self, data_accessor: DataAccessInterface, uri_handler: Iterable[UriHandlerBase] = ()):
+        super().__init__(data_accessor, uri_handler)
+        # register assets that we know we are using
+        self.register_asset_type(SpecializedAssetFactory(CacheAsset, self))
+        self.register_asset_type(SpecializedAssetFactory(RenderAsset, self))
+        self.register_asset_type(SpecializedAssetFactory(ComposeAsset, self))
+
     def new_cache_asset(self, name: str, description: str, path_id: str) -> CacheAsset:
         new_asset = self.new_asset(name, description, CacheAsset.type_name(), path_id)
         assert isinstance(new_asset, CacheAsset), 'inconsistency!'
