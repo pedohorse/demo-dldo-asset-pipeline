@@ -45,6 +45,13 @@ class AssetDependencyChecker(BaseNode):
         deps = version.get_dependencies()
         if only_nodata:
             deps = [x for x in deps if not x.is_data_available()]
+            # TODO: we rely here on that computed data cannot be deleted
+            #  however in future that will be possible
+            #  in that case we will have much more problems than this ofc, but here particularly
+            #  we calc if data is avaliable here, but tasks will be checked later by a worker.
+            #  during that time data could have been deleted
+            #  INSTEAD we could just at least check all deps on worker, and discard completed futures
+            #  however that too does not guarantee to be atomic
 
         spawns = []
         if create_data_task:
