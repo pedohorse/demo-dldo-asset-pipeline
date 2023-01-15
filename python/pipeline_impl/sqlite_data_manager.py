@@ -4,52 +4,21 @@ from pathlib import Path
 import sqlite3
 import json
 
-try:
-    import lifeblood_connection
-    in_lifeblood_runtime = True
-except ImportError:
-    in_lifeblood_runtime = False
-
-from lifeblood_client.query import Task
-from lifeblood_client.submitting import NewTask, EnvironmentResolverArguments
-
 from pipeline.asset_data import AssetVersionData, AssetData, DataState, AssetTemplateData
 from pipeline.data_access_interface import DataAccessInterface, NotFoundError
-from pipeline.future import ConditionCheckerFuture, FutureResult
+from pipeline.future import FutureResult
 from pipeline.generation_task_parameters import GenerationTaskParameters
+from pipeline.task_scheduling_interface import TaskSchedulingInterface, TaskSchedulingResultReportReceiver
 
 from typing import Iterable, Tuple, List, Union, Optional
 
 
-class LifebloodTaskFuture(ConditionCheckerFuture):
-
-    def _check(self):
-        task = self.__task
-        return task.state == Task.TaskState.DONE and task.paused \
-               or task.state == Task.TaskState.ERROR
-
-    def _get_result(self):
-        """
-        just return True on success, False on Failure
-        we expect lifeblood graph to be responsible for data setting to DB
-        """
-        return self._check() and self.__task.state != Task.TaskState.ERROR
-
-    def get_lifeblood_task(self) -> Task:
-        return self.__task
-
-    def __init__(self, addr, task_id):
-        self.__task = Task(addr, task_id)
-        super(LifebloodTaskFuture, self).__init__(self._check,
-                                                  self._get_result)
-
-
-class SqliteDataManagerWithLifeblood(DataAccessInterface):
-    def __init__(self, db_path: Union[Path, str], lb_path: Tuple[str, int]):
+class SqliteDataManagerWithLifeblood(DataAccessInterface, TaskSchedulingResultReportReceiver):
+    def __init__(self, db_path: Union[Path, str], task_scheduler: TaskSchedulingInterface):
+        super().__init__(task_scheduler)
         if isinstance(db_path, str):
             db_path = Path(db_path)
         self.__db_path = db_path
-        self.__lb_addr = lb_path
         with sqlite3.connect(db_path) as con:
             con.executescript(_init_script)
 
@@ -137,7 +106,6 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
 
             return [x['pathid'] for x in cur.fetchall()]
 
-
     def publish_new_asset_version(self, asset_path_id: str, version_data: AssetVersionData, dependencies: Iterable[str]):
         """
         if version_data.pathid is None - it will be assigned automatically based on asset_path_id and version_id
@@ -214,41 +182,47 @@ class SqliteDataManagerWithLifeblood(DataAccessInterface):
             version_string = '.'.join(str(x) for x in (data[f'version_{i}'] for i in (0, 1, 2)) if x != -1)
 
             if state == DataState.IS_COMPUTING:
-                fut = LifebloodTaskFuture(self.__lb_addr, data['data_calculator_id'])
+                fut = self.get_task_scheduler().get_schedule_event_future(data['data_calculator_id'])
+                # fut = LifebloodTaskFuture(self.__lb_addr, data['data_calculator_id'])
                 con.rollback()
                 return fut
 
             # schedule data coputation
+            asset_version_data = self.get_asset_version_data_from_path_id(path_id)
             data_generation_data = GenerationTaskParameters.deserialize(data['data_task_attr'])
 
-            env_args = EnvironmentResolverArguments(data_generation_data.environment_arguments.name or 'StandardEnvironmentResolver',
-                                                    data_generation_data.environment_arguments.attribs)
-
-            task_stuff = data_generation_data.attributes  # this contains lifeblood-formated stuff, maybe TODO: standardize, generalize, type
-            task_stuff.setdefault('attribs', {})['asset_version_id'] = path_id
-            task_stuff['attribs']['asset_id'] = data['asset_pathid']
-            task_stuff['attribs']['version'] = version_string
-            task_stuff['attribs']['locked_asset_versions'] = data_generation_data.version_lock_mapping
-            # note that at this point data_generation_data.attributes are tainted, DON'T use it later here, or just copy it above
-            if in_lifeblood_runtime:
-                # TODO: this does not take env into account...
-                task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], env_arguments=env_args, blocking=True)
-            else:
-                task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
-                               node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
-                               scheduler_addr=self.__lb_addr,
-                               env_args=env_args,
-                               task_attributes=task_stuff.get('attribs', {}),
-                               priority=task_stuff.get('priority', 50)).submit()
-                task_id = task.id
+            future, task_id = self.get_task_scheduler().schedule_data_generation_task(asset_version_data, data_generation_data)
+            # env_args = EnvironmentResolverArguments(data_generation_data.environment_arguments.name or 'StandardEnvironmentResolver',
+            #                                         data_generation_data.environment_arguments.attribs)
+            #
+            # task_stuff = data_generation_data.attributes  # this contains lifeblood-formated stuff, maybe TODO: standardize, generalize, type
+            # task_stuff.setdefault('attribs', {})['asset_version_id'] = path_id
+            # task_stuff['attribs']['asset_id'] = data['asset_pathid']
+            # task_stuff['attribs']['version'] = version_string
+            # task_stuff['attribs']['locked_asset_versions'] = data_generation_data.version_lock_mapping
+            # # note that at this point data_generation_data.attributes are tainted, DON'T use it later here, or just copy it above
+            # if in_lifeblood_runtime:
+            #     # TODO: this does not take env into account...
+            #     task_id = lifeblood_connection.create_task(task_stuff['name'], task_stuff['attribs'], env_arguments=env_args, blocking=True)
+            # else:
+            #     task = NewTask(name=task_stuff.get('name', 'just some unnamed task'),
+            #                    node_id=task_stuff.get('node_id', 2),  # 2 here is what defined by lifeblood network setup, the node has id=2, just so happened
+            #                    scheduler_addr=self.__lb_addr,
+            #                    env_args=env_args,
+            #                    task_attributes=task_stuff.get('attribs', {}),
+            #                    priority=task_stuff.get('priority', 50)).submit()
+            #     task_id = task.id
 
             cur.execute('UPDATE asset_versions SET data_produced = ?, data_calculator_id = ? WHERE pathid == ?', (DataState.IS_COMPUTING.value,
                                                                                                                   task_id,
                                                                                                                   path_id))
             con.commit()
-            return LifebloodTaskFuture(self.__lb_addr, task_id)
+            return future
 
-    def _data_computation_completed_callback(self, path_id: str, data: dict):
+    def data_computation_completed_callback(self, path_id: str, data: dict):
+        """
+        Callback to be called by TaskScheduler when job is done
+        """
         with sqlite3.connect(self.__db_path) as con:
             cur = con.cursor()
             cur.execute('BEGIN IMMEDIATE')
@@ -389,7 +363,7 @@ CREATE TABLE IF NOT EXISTS "asset_versions" (
     "version_2"    INTEGER NOT NULL DEFAULT -1,
     "data_task_attr"    TEXT,
     "data_produced"    INTEGER NOT NULL DEFAULT 0,
-    "data_calculator_id"    INTEGER DEFAULT NULL,
+    "data_calculator_id"    TEXT DEFAULT NULL,
     "data"    TEXT,
     FOREIGN KEY("asset_pathid") REFERENCES "assets"("pathid") ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY("pathid")
