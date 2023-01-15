@@ -26,7 +26,7 @@ class AssetVersionData:
     version_id: Tuple[int, int, int]
     data_producer_task_attrs: GenerationTaskParameters
     data_availability: DataState
-    data_calculator_id: int
+    data_calculator_id: str
     data: Optional[dict]
 
 
