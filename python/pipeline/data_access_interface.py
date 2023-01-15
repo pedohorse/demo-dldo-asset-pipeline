@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Iterable, Tuple, List, Optional
 from .asset_data import AssetData, AssetVersionData, AssetTemplateData
+from .task_scheduling_interface import TaskSchedulingInterface
 from .future import FutureResult
 
 
@@ -16,6 +17,9 @@ class TaskSchedulerNotAvailable(RuntimeError):
 
 
 class DataAccessInterface:
+    def __init__(self, task_scheduler: TaskSchedulingInterface):
+        self.__task_scheduler = task_scheduler
+
     def get_asset_data(self, asset_path_id: str) -> AssetData:
         asset_datas = self.get_asset_datas((asset_path_id,))
         if len(asset_datas) == 0:
@@ -99,17 +103,14 @@ class DataAccessInterface:
         raise NotImplementedError()
 
     # scheduling execution
+    def get_task_scheduler(self):
+        return self.__task_scheduler
+
     def schedule_data_computation_for_asset_version(self, path_id: str) -> FutureResult:
         """
         if already scheduled - should return future to that process
         instead of scheduling multiple times
         but ultimately it's up to the implementation to decide
-        """
-        raise NotImplementedError()
-
-    def _data_computation_completed_callback(self, path_id: str, data):
-        """
-        whatever was scheduled for data computation should call this
         """
         raise NotImplementedError()
 
