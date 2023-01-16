@@ -7,11 +7,13 @@ from demo_pipeline import get_director
 from typing import Iterable, Optional
 
 
-def gen_dot(root_version_pathids: Iterable[str] = ()) -> str:
+def gen_dot(root_version_uris: Iterable[str] = ()) -> str:
     director = get_director()
 
-    if not root_version_pathids:
+    if not root_version_uris:
         root_version_pathids = director.get_data_accessor().get_leaf_asset_version_pathids()
+    else:
+        root_version_pathids = [director.fetch_uri(uri).path_id for uri in root_version_uris]
     print(root_version_pathids)
 
     root_versions = [director.get_asset_version(x) for x in root_version_pathids]
@@ -38,11 +40,11 @@ def gen_dot(root_version_pathids: Iterable[str] = ()) -> str:
 
 def main(argv):
     parser = argparse.ArgumentParser(description='generate image of asset dependencies')
-    parser.add_argument('pathid', nargs='*')
+    parser.add_argument('uri', nargs='*')
 
     opts = parser.parse_args(argv[1:])
 
-    dot_code = gen_dot(opts.pathid)
+    dot_code = gen_dot(opts.uri)
     # print(dot_code)
 
     fd, path = tempfile.mkstemp('.png')
