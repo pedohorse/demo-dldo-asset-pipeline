@@ -8,7 +8,7 @@ from pipeline_impl.asset_version_uri_handler import AssetVersionUriHandler
 
 from pipeline_impl.specialized_assets import CacheAsset, RenderAsset, ComposeAsset
 
-lb_addr = ('192.168.0.28', 1384)
+lb_addr = ('127.0.0.1', 1384)
 __scheduler = LifebloodDataScheduler(lb_addr)
 __dm = SqliteDataManagerWithLifeblood(os.path.join(os.environ['PIPELINE_ROOT'], 'smth.db'), __scheduler)
 __scheduler.add_task_completion_callback_receiver(__dm)
