@@ -6,7 +6,6 @@ from pipeline_impl.lifeblood_task_scheduler import LifebloodDataScheduler
 from pipeline_impl.asset_uri_handler import AssetUriHandler
 from pipeline_impl.asset_version_uri_handler import AssetVersionUriHandler
 
-from pipeline_impl.specialized_assets import CacheAsset, RenderAsset, ComposeAsset
 
 lb_addr = ('127.0.0.1', 1384)
 __scheduler = LifebloodDataScheduler(lb_addr)
